@@ -13,9 +13,11 @@ It correctly bundles React in production mode and optimizes the build for the be
 The build is minified and the filenames include the hashes.
 Your app is ready to be deployed!
 
-## Hosting
-Hosting is done with Firebase. 
-Coming soon..
+## To Host
+Navigate to this 'frontend' directory. Run:
+`firebase deploy`
+Hosting is done with Firebase Hosting, [See the Docs](https://firebase.google.com/docs/hosting/). 
+
 
 ## Dependencies:
 
