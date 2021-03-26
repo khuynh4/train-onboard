@@ -263,7 +263,6 @@ def add_new_trainee():
     return redirect('/')
 
 #create new training template
-# not sure that you need trainee_uuid here - you're just creating a new template, not tying it to an employee
 @app.route('/database/create_new_template', methods=["POST"])
 def create_new_template():
     template_name = request.form["template_name"]
@@ -433,13 +432,20 @@ def add_template_to_training_plan():
 
 
     
+
+
+
+
+"""
+How does this return the trainees specific to a given manager?
+"""
 # expect to get manager uuid. Returns json list of trainee names
 @app.route('/manager/get_trainee_names', methods=['GET'])
 def get_trainee_names():
     manager_uuid = request.form["manager_uuid"]
 
     path = 'Trainees'
-    trainees = db.child(path).order_by_child('manager').equal_to(manager_uuid).get()
+    trainees = db.child(path).order_by_child('manager').get()
 
     trainee_names = {}
     for trainee in trainees:
