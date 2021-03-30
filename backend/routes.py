@@ -2,39 +2,34 @@ from flask import *
 from __init__ import auth, db, storage
 
 """
-This is the script for the server(s). The server should be stateless. If we use Firebase for authentication,
-then any request coming from the front end should include the logged in user's unique user ID (uuid) as a string. That uuid
-can be used to identify the user in the database and all of the data associated with them. For instance, a trainee
-would have a uuid and in the database their training plan would be mapped to their uuid. Any request sent to the
-database from the server should include the uuid so that a lookup can be performed to retrieve the relevant info. The 
-server should handle the case where no data is returned, meaning that a faulty uuid was given.
+Admin Methods - not in our product backlog; propose we just set these things up manually and make accounts for Josh/Scott/George to do their testing - call it "doing things that don't scale"
+create methods - create new company, create new manager, create new employee
+add methods - add manager to company, add employee to company, add employee to manager
+query methods - view companies, view managers, view employes
+removal methods
 
-https://firebase.google.com/docs/auth/web/start
-https://firebase.google.com/docs/reference/js/firebase.User#uid
+Authentication
+signup - I propose that we get rid of signup and say that we manually make accounts for now
+log in
 
-I would expect the database schema for a training template to have a couple tables. Maybe something like this.
-"manager uuid", "template name"
-"template name", "training name"
-"training name", all the training columns
+Manager Methods
+query methods - view manager's employees, view specific employee plan, view templates available, view specific template, view specific task in plan or template, 
+add methods - add task to specific employee plan or specific template, add documentation/link/notes/due date to specific task
+remove methods - remove task from specific employee plan or specific template, remove documentation/link/notes/due date from specific task
 
-I would expect the database schema for a training plan to also have a couple tables. One for relating manager to employee,
-one for relating employee to training plan. Maybe something like this.
-"manager uuid", "employee uuid"
-"trainee uuid", "training name"
-then, we can leverage the table that relates "training name", all the training columns
+Employee Methods
+query methods - view plan, view specific task in plan, view calendar
+update methods - mark task complete
+I propose that the google calendar integration be done in the front end
 
-Expect a database mapping trainee to meetings
-"trainee uuid", all the meeting columns
-
-Also mapping of uuids to names
-"manager uuid", "manager name"
-"trainee uuid", "trainee name"
-
-The front end will hit the various server endpoints to get data from the databse or update database state.
-To make things easier for the demo, it might make sense to have fewer endpoints and just return everything in one shot.
-Ie. a manager who wants to get their templates just calls a single endpoint and all templates with all data are returned
-in a single json. Same for getting employee plans. Then you control what's displayed using js dropdowns in the front end.
-I've put in a bunch of endpoints for now, but it might be better to only have a couple.
+I feel like the databases should not point bidirectionally for this project. For simplicity's sake, it's easier if they go one way.
+Ie. company -> managers and employees
+manager -> employees and templates
+employee -> plan
+template -> trainings
+plan -> templates, trainings
+training -> training things like name, documentation links, other links, notes, due date
+no user db. No signup. We make their account as either a manager or a employee and give them the credentials to log in.
 """
 
 
@@ -52,6 +47,8 @@ def home():
 ###
 """
 Authentication Methods
+log in
+sign up
 """
 ###
 
@@ -65,11 +62,7 @@ def login():
         user = auth.sign_in_with_email_and_password(email, password)
     except:
         print("Invalid UserID or Password. Try again or sign up.")
-        response = input("Would you like to signup? (y/n)")
-        if response == 'y':
-            return redirect("/authentication/signup") #default redirect to signup route for now
-        else:
-            return redirect('authentication/login') #redirect to same login route
+        return 0
 
     #returns the users verification token
     return user['idToken']
@@ -84,16 +77,6 @@ def refreshtoken(user):
 
 @app.route('/authentication/signup', methods=['POST'])
 def signup(): #default using command line until HTML forms are built
-
-    '''
-    first_name = input("Enter your first name: \n")
-    last_name = input("Enter your last name: \n")
-    email = input("Enter your email address: \n")
-    address = input("Enter your address: \n")
-    age = input("Enter your age: \n")
-    password = input("Enter your password: \n")
-    confirm_pass = input("Confirm your passowrd: \n")'''
-
     first_name = request.form["first_name"]
     last_name = request.form["last_name"]
     email = request.form["email"]
@@ -108,17 +91,17 @@ def signup(): #default using command line until HTML forms are built
             user = auth.create_user_with_email_and_password(email, password)
         except:
             print("Email already in use. Try using another one")
-            return redirect('authentication/signup')
+            return 
     else:
         print("Passwords do not match. Try again")
-        return redirect('/authentication/signup')
+        return 0
 
     #send verification email
     auth.send_email_verification(user['idToken'])
 
     #load information to database default to Users node
     data = {
-        'name': first_name + last_name,
+        'name': "{} {}".format(first_name, last_name),
         'email': email,
         'age': age,
         'address': address
@@ -140,6 +123,10 @@ def account_info():
 ###
 """
 Database Methods
+create methods - create new company, create new manager, create new employee
+add methods - add manager to company, add employee to company, add employee to manager
+query methods - view companies, view managers, view employes
+removal methods
 """
 ###
 
@@ -319,13 +306,54 @@ def create_new_training_plan():
 ###
 """
 Manager Methods
+query methods - view manager's employees, view specific employee plan, view templates available, view specific template, view specific task in plan or template, 
+add methods - add task to specific employee plan or specific template, add documentation/link/notes/due date to specific task
+remove methods - remove task from specific employee plan or specific template, remove documentation/link/notes/due date from specific task
 """
 ###
 
-# expect to get uuid, will query database with it to get the names of the training templates associated with that manager
-# will return a json of the list of names of the various training templates
+# expect to get verification token, manager uuid, will query database to get the name/ID pairs of the manager's employees
+# and return a json of the list of name/ID pairs
+@app.route('/manager/get_trainee_names', methods=['GET'])
+def get_trainee_names():
+    # use manager uuid and token to get employee name/uuid pairs and return them
+
+    manager_uuid = request.form["manager_uuid"]
+
+    path = 'Trainees'
+    trainees = db.child(path).order_by_child('manager').equal_to(manager_uuid).get()
+
+    trainee_names = {}
+    for trainee in trainees:
+        name = trainee.val()['name']
+        trainee_uuid = trainee.key()
+        trainee_names[name] = trainee_uuid
+
+    return trainee_names
+
+# expect to get verification token, manager uuid, employee uuid, will query database to get 
+@app.route('/manager/get_trainee_training_plan', methods=['GET'])
+def manager_get_trainee_training_plan():
+    manager_uuid = request.form["manager_uuid"]
+    trainee_name = request.form["trainee_name"]
+
+    path = "Training Plan"
+    training_plans = db.child(path).order_by_child("manager").equal_to(manager_uuid).get()
+
+    trainee_plans = {}
+    for plan in training_plans:
+        if plan.val()['name'] == trainee_name:
+            trainee_plans[plan.key()] = plan.val()
+
+    return trainee_plans
+
+
+# expect to get verification token, will query database to get the name/ID pairs of the training templates associated with that manager
+# will return a json of the list of name/ID pairs of the various training templates
 @app.route('/manager/get_training_template_names', methods=['GET'])
 def get_training_templates_names():
+    # use manager uuid and token to get templates name/ID pairs and return them
+
     manager_uuid = request.form["manager_uuid"]
     return db.child("Templates").order_by_child("manager").equal_to(manager_uuid).get()
 
@@ -433,46 +461,14 @@ def add_template_to_training_plan():
 
 
     
-# expect to get manager uuid. Returns json list of trainee names
-@app.route('/manager/get_trainee_names', methods=['GET'])
-def get_trainee_names():
-    manager_uuid = request.form["manager_uuid"]
-
-    path = 'Trainees'
-    trainees = db.child(path).order_by_child('manager').equal_to(manager_uuid).get()
-
-    trainee_names = {}
-    for trainee in trainees:
-        name = trainee.val()['name']
-        trainee_uuid = trainee.key()
-        trainee_names[name] = trainee_uuid
-
-    return trainee_names
-
-
-
-
-# expect to get manager uuid, trainee name.
-@app.route('/manager/get_trainee_training_plan', methods=['GET'])
-def manager_get_trainee_training_plan():
-    manager_uuid = request.form["manager_uuid"]
-    trainee_name = request.form["trainee_name"]
-
-    path = "Training Plan"
-    training_plans = db.child(path).order_by_child("manager").equal_to(manager_uuid).get()
-
-    trainee_plans = {}
-    for plan in training_plans:
-        if plan.val()['name'] == trainee_name:
-            trainee_plans[plan.key()] = plan.val()
-
-    return trainee_plans
 
 
 
 ###
 """
 Trainee Methods
+query methods - view plan, view specific task in plan, view calendar
+update methods - mark task complete
 """
 ###
 
