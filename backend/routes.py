@@ -1,4 +1,12 @@
-from flask import *
+import logging
+import os
+
+from flask import Flask, jsonify, request
+import flask_cors
+import google.auth.transport.requests
+import google.oauth2.id_token
+import requests_toolbelt.adapters.appengine
+
 from __init__ import auth, db, storage
 
 """
@@ -33,8 +41,13 @@ no user db. No signup. We make their account as either a manager or a employee a
 """
 
 
+# Use the App Engine Requests adapter. This makes sure that Requests uses
+# URLFetch.
+#requests_toolbelt.adapters.appengine.monkeypatch()
+HTTP_REQUEST = google.auth.transport.requests.Request()
 
 app = Flask(__name__)
+flask_cors.CORS(app)
 
 
 @app.route('/')
@@ -52,7 +65,7 @@ sign up
 """
 ###
 
-#using command line for functionality right now
+# for server testing purposes. typically, login will be handled on the client.
 @app.route('/authentication/login', methods=['POST'])
 def login():
     email = request.form["email"]
@@ -67,14 +80,24 @@ def login():
     #returns the users verification token
     return user['idToken']
 
+# for server testing purposes to verify that the token verification functions are working
+@app.route('/authentication/test', methods=['POST'])
+def test():
+    uuid = verify(request)
+    if uuid == None:
+        return 'Unauthorized', 401
+    else:
+        return {"data" : uuid}
 
 
-#function to refresh toekn to avoid stale tokens, tokens are valid for 1 hour per firebase specification
+
+# for server testing purposes. Typically, token refresh will be handled on the client.
+# function to refresh toekn to avoid stale tokens, tokens are valid for 1 hour per firebase specification
 def refreshtoken(user):
     return auth.refresh(user['refreshToken'])['idToken']
 
 
-
+# for server testing purposes. Typically, signup/login will be handled on the client.
 @app.route('/authentication/signup', methods=['POST'])
 def signup(): #default using command line until HTML forms are built
     first_name = request.form["first_name"]
@@ -112,17 +135,10 @@ def signup(): #default using command line until HTML forms are built
     return user['idToken']
 
 
-#TODO not going to send full user in request. Need to get user info using some other request trigger.
-#retrieve account info
-@app.route('/authentication/get_account_info', methods=['GET'])
-def account_info():
-    user = request.form["user"]
-    return auth.get_account_info(user['idToken'])
-
 
 ###
 """
-Database Methods
+ADMIN Methods - hidden API for use by founders to manually add new companies, managers, employees
 create methods - create new company, create new manager, create new employee
 add methods - add manager to company, add employee to company, add employee to manager
 query methods - view companies, view managers, view employes
@@ -130,127 +146,102 @@ removal methods
 """
 ###
 
-#add new companies to the database
+# add new companies to the database
 @app.route('/database/add_new_company', methods=['POST'])
 def create_new_company():
-    name = request.form["name"]
-    num_employees = request.form["num_employees"]
+    req = request.get_json(force=True)
+    identifier = req["identifier"]
+    name = req["name"]
+    num_employees = req["num_employees"]
 
     try:
-        managers = request.form["managers"]
+        managers = req["managers"] # will be of the form: 'managers' : {"uuid 1" : "name 1", "uuid 2" : "name 2"}
     except:
         managers = {None : None}
     
     try:
-        trainees = request.form["trainees"]
+        trainees = req["trainees"] # will be of the form: 'trainees' : {"uuid 1" : "name 1", "uuid 2" : "name 2"}
     except:
         trainees = {None : None}
 
+    # set company data
+    path = 'Companies'
     data = {
         'name': name,
         'num_employees': num_employees,
-        'managers': managers, #will be a dictionary of "manager_name: manager_uuid" default to none
-        'trainees': trainees #will be a dictionary of "trainee_name: trainee_uuid" default to none
     }
+    db.child(path).child(identifier).set(data)
 
-    path = 'Companies'
+    db.child(path).child(identifier).child("Managers").set(managers)
+    db.child(path).child(identifier).child("Trainees").set(trainees)
 
-    db.child(path).push(data)
+    return {"response" : "success"}
 
-    return redirect('/') #redirect to default page 
-
-#add new managers to the database
+# add new managers to the database
 @app.route('/database/add_new_manager', methods=['POST'])
 def add_new_manager():
-    name = request.form["name"]
-    age = request.form["age"]
-    company_name = request.form["company_name"]
-    company_uuid = request.form["company_uuid"]
-    
-    try:
-        meetings = request.form["meetings"]
-    except:
-        meetings = {None : None}
+    req = request.get_json(force=True)
+    manager_uuid = req["manager_uuid"]
+    name = req["name"]
+    age = req["age"]
 
     try:
-        trainees = request.form["trainees"]
+        trainees = req["trainees"] # will be of the form: 'trainees' : {"uuid 1" : "name 1", "uuid 2" : "name 2"}
     except:
         trainees = {None : None}
 
     try:
-        templates = request.form["templates"]
+        templates = req["templates"] # will be of the form: 'templates' : {"template id 1" : "template name 1", "template id 2" : "template name 2"}
     except:
         templates = {None : None}
 
     try:
-        files = request.form["files"]
-    except:
-        files = {None : None}
-
-    data = {
-        'name': name,
-        'age': age,
-        'company': company_name,
-        'company_uuid': company_uuid,
-        'meetings': meetings, #will be a dictionary of "Meeting person name: datetime" default to none
-        'templates': templates, #will be a dictionary of "template_names: template uid" default to none
-        'trainees': trainees, #will be a dictionary of "trainee_name: trainee_uuid" default to none
-        'files': files #will be a list containing links to the firebase storage 
-    }
-
-    path = 'Managers'
-
-    db.child(path).push(data)
-
-    return redirect('/')
-
-#add new trainees to the database
-@app.route('/database/add_new_trainee', methods=['POST'])
-def add_new_trainee():
-    name = request.form["name"]
-    age = request.form["age"]
-    company_name = request.form["company_name"]
-    company_uuid = request.form["company_uuid"]
-    
-    try:
-        meetings = request.form["meetings"]
+        meetings = req["meetings"] # will be of the form: 'meetings' : {"uuid 1" : "datetime 1", "uuid 2" : "datetime 2"}
     except:
         meetings = {None : None}
 
-    try:
-        managers = request.form["trainees"]
-    except:
-        managers = {None : None}
-
-    try:
-        templates = request.form["templates"]
-    except:
-        templates = {None : None}
-
-    try:
-        training_plans = request.form["files"]
-    except:
-        training_plans = {None : None}
-
+    # set manager data
+    path = 'Managers'
     data = {
         'name': name,
         'age': age,
-        'company': company_name,
-        'company_uuid': company_uuid,
-        'meetings': meetings, #will be a dictionary of "Meeting person name: datetime" default to none
-        'managers': managers, #will be a dictionary of "manager_name: manager_uuid" default to none
-        'templates': templates, #will be a dictionary of "template_names: template uid" default to none
-        'training_plans': training_plans #will be a dictionary of "training plan name: training plan uid"
     }
+    db.child(path).child(manager_uuid).set(data)
 
+    db.child(path).child(manager_uuid).child("Trainees").set(trainees)
+    db.child(path).child(manager_uuid).child("Templates").set(templates)
+    db.child(path).child(manager_uuid).child("Meetings").set(meetings)
+
+    return {"response" : "success"}
+
+# add new trainees to the database
+@app.route('/database/add_new_trainee', methods=['POST'])
+def add_new_trainee():
+    req = request.get_json(force=True)
+    trainee_uuid = req["trainee_uuid"]
+    name = req["name"]
+    age = req["age"]
+    training_plan = req["training_plan"]
+    
+    try:
+        meetings = req["meetings"] # will be of the form: 'meetings' : {"uuid 1" : "datetime 1", "uuid 2" : "datetime 2"}
+    except:
+        meetings = {None : None}
+
+    # set trainee data
     path = 'Trainees'
+    data = {
+        'name': name,
+        'age': age,
+        'training_plan': training_plan
+    }
+    db.child('Trainees').child(trainee_uuid).set(data)
 
-    db.child(path).push(data)
+    db.child(path).child(trainee_uuid).child("Meetings").set(meetings)
 
-    return redirect('/')
+    return {"response" : "success"}
 
-#create new training template
-# not sure that you need trainee_uuid here - you're just creating a new template, not tying it to an employee
+# create new training template
 @app.route('/database/create_new_template', methods=["POST"])
 def create_new_template():
     template_name = request.form["template_name"]
@@ -275,7 +266,7 @@ def create_new_template():
 
     db.child(path).push(data)
 
-    return redirect('/')
+    return {"response" : "success"}
 
 #create a new training plan
 #expect go manager uuid and trainee uuid and respectve templates as a list of template uids as an argument
@@ -300,7 +291,7 @@ def create_new_training_plan():
 
     db.child(path).push(data)
 
-    return redirect('/')
+    return {"response" : "success"}
 
 
 ###
@@ -312,13 +303,28 @@ remove methods - remove task from specific employee plan or specific template, r
 """
 ###
 
-# expect to get verification token, manager uuid, will query database to get the name/ID pairs of the manager's employees
-# and return a json of the list of name/ID pairs
-@app.route('/manager/get_trainee_names', methods=['GET'])
-def get_trainee_names():
-    # use manager uuid and token to get employee name/uuid pairs and return them
+# https://cloud.google.com/appengine/docs/standard/python/authenticating-users-firebase-appengine
+# takes a request, extracts the verification token, checks if it's valid, and returns None if invalid or the uuid if valid.
+def verify(request):
+    id_token = request.form['authorization']
+    claims = google.oauth2.id_token.verify_firebase_token(
+        id_token, HTTP_REQUEST, audience=os.environ.get('GOOGLE_CLOUD_PROJECT'))
+    if not claims:
+        return None
 
-    manager_uuid = request.form["manager_uuid"]
+    # Each identity provider sends a different set of claims, but each has at least a sub claim with a unique user ID and a claim that 
+    # provides some profile information, such as name or email, that you can use to personalize the user experience on your app.
+    return claims['sub']
+
+# expect request to have the following fields: authorization
+# the authorization field should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and queries the database to get name/uuid pairs of the manager's employees
+# and returns a json of the list of name/uuid pairs
+@app.route('/manager/get_trainees', methods=['GET'])
+def get_trainees():
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
     path = 'Trainees'
     trainees = db.child(path).order_by_child('manager').equal_to(manager_uuid).get()
@@ -423,7 +429,7 @@ def add_training_to_training_template():
     #finally, update the training template in the database
     db.child(path).child(template_uuid).update({'data': data})
 
-    return redirect('/')
+    return {"response" : "success"}
 
 
 
@@ -457,7 +463,7 @@ def add_template_to_training_plan():
     #update training plan in data base
     db.child(path_training).child(training_plan_uuid).update({'templates': training_templates})
 
-    return redirect('/')
+    return {"response" : "success"}
 
 
     
@@ -498,8 +504,11 @@ def get_trainee_meetings():
 
 
 
-# it seems to me most of the employee functionality could be done in the front end. Else, have some sort of partitioning of trainings and meetings
-# when returned by the server (ie. far out, upcoming, overdue). Don't need many(any?) more trainee endpoints on the backend server.
+@app.errorhandler(500)
+def server_error(e):
+    # Log the error and stacktrace.
+    logging.exception('An error occurred during a request.')
+    return 'An internal error occurred.', 500
 
 
 
@@ -507,4 +516,4 @@ if __name__ == '__main__':
     # This is used when running locally only. When deploying to Google App
     # Engine, a webserver process such as Gunicorn will serve the app. This
     # can be configured by adding an `entrypoint` to app.yaml.
-    app.run(host='0.0.0.0', port=8080, debug=True)
+    app.run(host='0.0.0.0', port=8080, debug=False)

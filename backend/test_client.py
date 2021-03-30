@@ -6,7 +6,7 @@ url = 'http://localhost:5000'
 params = {
     'name' : 'Jake',
     'info' : 'pretty cool'
-    }
+}
 r = requests.post(url, data=params)
 r = json.loads(r.text)
 print(r)
@@ -21,7 +21,7 @@ first_name = request.form["first_name"]
     confirm_password = request.form["confirm_pass"]
 """
 
-# authentication
+# server-side signup
 """
 url = 'http://localhost:8080/authentication/signup'
 params = {
@@ -32,19 +32,26 @@ params = {
     'address' : '123 ABC Street',
     'password' : 'password',
     'confirm_pass' : 'password'
-    }
+}
 r = requests.post(url, data=params)
 r = json.loads(r.text)
 print(r)
 """
 
-# login
+# login and test authentication of verification token
 """
 url = 'http://localhost:8080/authentication/login'
 params = {
     'email' : 'luoma@colorado.edu',
     'password' : 'password',
-    }
+}
+r = requests.post(url, data=params)
+print(r.text)
+
+url = 'http://localhost:8080/authentication/test'
+params = {
+    'authorization' : r.text
+}
 r = requests.post(url, data=params)
 print(r.text)
 """
@@ -53,10 +60,19 @@ print(r.text)
 """
 url = 'http://localhost:8080/database/add_new_company'
 params = {
+    'identifier' : '123abc',
     'name' : 'ACME Company',
-    'num_employees' : '2'
+    'num_employees' : '3',
+    'managers' : {
+        'NYFVp8qdnPhUX3Q4pzJ1LMbwvWh1' : 'Jake Luoma'
+    },
+    'trainees' : {
+        'MhDrj7IGknRLcDiz87btbK8zlwt2' : 'Warren Fulton',
+        'arbitrary_uuid' : 'Arbitrary Name'
     }
-r = requests.post(url, data=params)
+}
+data = json.dumps(params)
+r = requests.post(url, data=data)
 print(r.text)
 """
 
@@ -64,12 +80,16 @@ print(r.text)
 """
 url = 'http://localhost:8080/database/add_new_manager'
 params = {
-    'name' : 'Fenton the Dog', # https://www.youtube.com/watch?v=3GRSbr0EYYU
-    'age' : '6',
-    'company_name' : 'ABC Corp',
-    'company_uuid' : 'iwlupo84UENk',
+    'manager_uuid' : 'NYFVp8qdnPhUX3Q4pzJ1LMbwvWh1',
+    'name' : 'Jake Luoma',
+    'age' : '30',
+    'trainees' : {
+        'MhDrj7IGknRLcDiz87btbK8zlwt2' : 'Warren Fulton',
+        'arbitrary_uuid' : 'Arbitrary Name'
     }
-r = requests.post(url, data=params)
+}
+data = json.dumps(params)
+r = requests.post(url, data=data)
 print(r.text)
 """
 
@@ -77,22 +97,24 @@ print(r.text)
 """
 url = 'http://localhost:8080/database/add_new_trainee'
 params = {
-    'name' : 'Felix the Cat',
-    'age' : '6',
-    'company_name' : 'ABC Corp',
-    'company_uuid' : 'iwlupo84UENk',
-    }
-r = requests.post(url, data=params)
+    'trainee_uuid' : 'MhDrj7IGknRLcDiz87btbK8zlwt2',
+    'name' : 'Warren Fulton',
+    'age' : '22'
+}
+data = json.dumps(params)
+r = requests.post(url, data=data)
 print(r.text)
 """
 
 # create new template
+"""
 url = 'http://34.68.166.146:8080/database/create_new_template'
 params = {
     'template_name' : 'Test Template',
     'trainee_uuid' : 'Njwwol98JJwny65',
     'manager_uuid' : 'jjfiUUe662Ruuwm',
     'company_uuid' : 'iwlupo84UENk',
-    }
+}
 r = requests.post(url, data=params)
 print(r.text)
+"""
