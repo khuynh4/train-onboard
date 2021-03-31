@@ -43,7 +43,7 @@ print(r)
 url = 'http://localhost:8080/authentication/login'
 params = {
     'email' : 'luoma@colorado.edu',
-    'password' : 'password',
+    'password' : 'password'
 }
 r = requests.post(url, data=params)
 print(r.text)
@@ -106,15 +106,34 @@ r = requests.post(url, data=data)
 print(r.text)
 """
 
-# create new template
+# login, then test manager getting list of employees
 """
-url = 'http://34.68.166.146:8080/database/create_new_template'
+url = 'http://localhost:8080/authentication/login'
 params = {
-    'template_name' : 'Test Template',
-    'trainee_uuid' : 'Njwwol98JJwny65',
-    'manager_uuid' : 'jjfiUUe662Ruuwm',
-    'company_uuid' : 'iwlupo84UENk',
+    'email' : 'luoma@colorado.edu',
+    'password' : 'password'
 }
 r = requests.post(url, data=params)
+print("verification token = {}".format(r.text))
+
+url = 'http://localhost:8080/manager/get_trainees'
+headers = {'authorization' : r.text}
+r = requests.get(url, headers=headers)
+print(r.text)
+"""
+
+# login, then test manager getting an employee training plan
+"""
+url = 'http://localhost:8080/authentication/login'
+params = {
+    'email' : 'luoma@colorado.edu',
+    'password' : 'password'
+}
+r = requests.post(url, data=params)
+print("verification token = {}".format(r.text))
+
+url = 'http://localhost:8080/manager/get_trainees'
+headers = {'authorization' : r.text}
+r = requests.get(url, headers=headers)
 print(r.text)
 """

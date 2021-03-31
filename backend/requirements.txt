@@ -1,5 +1,6 @@
 flask
 flask_cors
 google-auth
-requests
-requests-toolbelt
+pyrebase
+requests==2.11.1
+requests-toolbelt==0.7.0

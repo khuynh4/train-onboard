@@ -1,10 +1,5 @@
 from flask import *
-from config import Config
 from pyrebase import pyrebase
-
-app = Flask(__name__)
-
-app.config.from_object(Config)
 
 firebaseConfig = {
 	'apiKey': "AIzaSyDe6g46cEfOWkyJpXXPtpnihper_Z60n0Q",

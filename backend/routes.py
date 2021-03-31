@@ -140,8 +140,8 @@ def signup(): #default using command line until HTML forms are built
 """
 ADMIN Methods - hidden API for use by founders to manually add new companies, managers, employees
 create methods - create new company, create new manager, create new employee
-add methods - add manager to company, add employee to company, add employee to manager
-query methods - view companies, view managers, view employes
+add methods (not implemented) - add manager to company, add employee to company, add employee to manager
+query methods (not implemented) - view companies, view managers, view employes
 removal methods
 """
 ###
@@ -221,75 +221,30 @@ def add_new_trainee():
     trainee_uuid = req["trainee_uuid"]
     name = req["name"]
     age = req["age"]
-    training_plan = req["training_plan"]
     
     try:
         meetings = req["meetings"] # will be of the form: 'meetings' : {"uuid 1" : "datetime 1", "uuid 2" : "datetime 2"}
     except:
         meetings = {None : None}
 
+    # make a new plan for the trainee
+    plan_key = db.generate_key()
+    data = {
+        'templates' : 'none',
+        'trainings' : 'none'
+    }
+    db.child('Plans').child(plan_key).set(data)
+
     # set trainee data
     path = 'Trainees'
     data = {
         'name': name,
         'age': age,
-        'training_plan': training_plan
+        'plan': plan_key
     }
     db.child('Trainees').child(trainee_uuid).set(data)
 
     db.child(path).child(trainee_uuid).child("Meetings").set(meetings)
-
-    return {"response" : "success"}
-
-# create new training template
-@app.route('/database/create_new_template', methods=["POST"])
-def create_new_template():
-    template_name = request.form["template_name"]
-    trainee_uuid = request.form["trainee_uuid"]
-    manager_uuid = request.form["manager_uuid"]
-    company_uuid = request.form["company_uuid"]
-
-    try:
-        data = request.form["data"]
-    except:
-        data = [None]
-
-    data = {
-        'template_name': template_name,
-        'trainee': trainee_uuid,
-        'manager': manager_uuid,
-        'company': company_uuid,
-        'data': data #will be data structure containing links to the firebase storage 
-    }
-
-    path = 'Templates'
-
-    db.child(path).push(data)
-
-    return {"response" : "success"}
-
-#create a new training plan
-#expect go manager uuid and trainee uuid and respectve templates as a list of template uids as an argument
-#will return you to main screen by default while pushing the new training template to the data ase
-@app.route('/database/create_new_training_plan', methods=["POST"])
-def create_new_training_plan():
-    manager_uuid = request.form["manager_uuid"]
-    trainee_uuid = request.form["trainee_uuid"]
-    
-    try:
-        templates = request.form["templates"]
-    except:
-        templates = [None]
-
-    data = {
-        'manager': manager_uuid,
-        'trainee': trainee_uuid,
-        'templates': templates
-    }
-
-    path = 'Training Plans'
-
-    db.child(path).push(data)
 
     return {"response" : "success"}
 
@@ -306,7 +261,7 @@ remove methods - remove task from specific employee plan or specific template, r
 # https://cloud.google.com/appengine/docs/standard/python/authenticating-users-firebase-appengine
 # takes a request, extracts the verification token, checks if it's valid, and returns None if invalid or the uuid if valid.
 def verify(request):
-    id_token = request.form['authorization']
+    id_token = request.headers['authorization']
     claims = google.oauth2.id_token.verify_firebase_token(
         id_token, HTTP_REQUEST, audience=os.environ.get('GOOGLE_CLOUD_PROJECT'))
     if not claims:
@@ -316,152 +271,136 @@ def verify(request):
     # provides some profile information, such as name or email, that you can use to personalize the user experience on your app.
     return claims['sub']
 
-# expect request to have the following fields: authorization
-# the authorization field should contain the user's verification token received from logging in
-# this method verifies the verification token to get the manager uuid and queries the database to get name/uuid pairs of the manager's employees
-# and returns a json of the list of name/uuid pairs
+# expect request to have the following headers: authorization
+# expect request to have the following fields: none
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and queries the database to get uuid/name pairs of the manager's employees
+# and returns a json of the list of uuid/name pairs
 @app.route('/manager/get_trainees', methods=['GET'])
 def get_trainees():
     manager_uuid = verify(request)
     if manager_uuid == None:
         return 'Unauthorized', 401
 
-    path = 'Trainees'
-    trainees = db.child(path).order_by_child('manager').equal_to(manager_uuid).get()
+    trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["Trainees"]
 
-    trainee_names = {}
-    for trainee in trainees:
-        name = trainee.val()['name']
-        trainee_uuid = trainee.key()
-        trainee_names[name] = trainee_uuid
+    return trainees
 
-    return trainee_names
-
-# expect to get verification token, manager uuid, employee uuid, will query database to get 
+# expect request to have the following header: authorization
+# expect request to have the following fields: trainee_uuid
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and queries the database to get
+# the trainee's plan_id. It could instead be set up to return the plan contents.
 @app.route('/manager/get_trainee_training_plan', methods=['GET'])
 def manager_get_trainee_training_plan():
-    manager_uuid = request.form["manager_uuid"]
-    trainee_name = request.form["trainee_name"]
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
-    path = "Training Plan"
-    training_plans = db.child(path).order_by_child("manager").equal_to(manager_uuid).get()
+    req = request.get_json(force=True)
 
-    trainee_plans = {}
-    for plan in training_plans:
-        if plan.val()['name'] == trainee_name:
-            trainee_plans[plan.key()] = plan.val()
+    trainee_uuid = req['trainee_uuid']
 
-    return trainee_plans
+    plan_id = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]['plan']
 
+    # here is where we could use the plan_id to query the plan table to get template_ids and individual trainings
+    # then query the templates table with the template_ids to get all trainings for this user
+    # if we don't do that here, we'll need another method to do that
 
-# expect to get verification token, will query database to get the name/ID pairs of the training templates associated with that manager
-# will return a json of the list of name/ID pairs of the various training templates
+    return plan_id
+
+# expect request to have the following header: authorization
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and queries the database to get
+# the manager's training template_id/template_name pairs.
 @app.route('/manager/get_training_template_names', methods=['GET'])
 def get_training_templates_names():
-    # use manager uuid and token to get templates name/ID pairs and return them
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
-    manager_uuid = request.form["manager_uuid"]
-    return db.child("Templates").order_by_child("manager").equal_to(manager_uuid).get()
+    return db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['templates']
 
-
-
-# expect to get uuid. Also expect to get template name as url argument. Will query the database with these things to get
-# the relevant training template. Will return it as a json dict of a list of dicts of trainings
+# expect request to have the following header: authorization
+# expect the request to have the following fields: template_id
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and queries the database to get
+# the training template's contents (training_id/training_name pairs)
 @app.route('/manager/get_training_template', methods=['GET'])
 def get_training_template():
-    template_uuid = request.form["template_uuid"]
-    template = db.child("Templates").child(template_uuid).get().val()
-    trainings = template['data']
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
-    return trainings
+    req = request.get_json(force=True)
 
+    template_id = req['template_id']
 
+    return db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
 
-# expect to get uuid, json of the training as a string to be added. Also expect to get template name as url argument. Will add to database.
+# expect request to have the following header: authorization
+# expect the request to have the following fields: template_id, training_name, documentation_links, other_links, note, due_date, duration
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid, makes a new training, and adds that training to the given template
 @app.route('/manager/add_training_to_training_template', methods=['POST'])
 def add_training_to_training_template():
-    template_uuid = request.form["template_uuid"]
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
-    try:
-        data = request.form["data"]
-    except:
-        data = {None : None}
+    req = request.get_json(force=True)
 
-    #find template
-    path = "Templates"
-    template = db.child(path).child(template_uuid).get().val()
+    template_id = req['template_id']
+    training_name = req['training_name']
+    documentation_links = req['documentation_links']
+    other_links = req['other_links']
+    note = req['note']
+    due_date = req['due_date']
+    duration = req['duration']
 
-    data = template['data']
-    template_name = template['name']
+    # make a new training
+    training_key = db.generate_key()
+    data = {
+        'name' : training_name,
+        'documentation_links' : documentation_links,
+        'other_links' : other_links,
+        'note' : note,
+        'due_date' : due_date,
+        'duration' : duration
+    }
+    db.child('Trainings').child(training_key).set(data)
 
-    #find company name
-    company = db.child('Companies').child(template['company']).get()
-    company_name = company.val()['name']
+    # since we can't append to database, get the trainings currently in the template
+    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
 
-    #find manager name
-    manager = db.child('Managers').child(template['manager']).get()
-    manager_name = manager.val()['name']
-
-    #find trainee name
-    trainee = db.child("Trainees").child(template['trainee']).get()
-    trainee_name = trainee.val()['name']
-
-    #create path in storage
-    #data in storage will be ordered by a hierarchy from Company -> Manager -> Trainee -> Template -> training data
-    cloud_filepath = '{}/{}/{}}/{}/'.format(company_name, manager_name, trainee_name, template_name)
-
-    #post data into storage with format 'data.key()/data.value()'
-    #values should be filenames or else it wont push to storage
-    keys = data.keys()
-    values = data.values()
-
-    for key in keys:
-        filename = values[key]
-        cloud_filename = cloud_filename + str(key) + '/' + filename
-        storage.child(cloud_filename).put(filename) #add the file to the correct directory in Firebase storage
-
-        #fetch Firebase storage url
-        url = storage.child(cloud_filename).get_url(None)
-
-        #add url to template data
-        data.append(url)
-
-    #finally, update the training template in the database
-    db.child(path).child(template_uuid).update({'data': data})
+    # set template data
+    trainings.append({training_key : training_name})
+    db.child('Templates').child(template_id).update(trainings)
 
     return {"response" : "success"}
 
-
-
-
-"""
-As written, don't use manager_uuid or trainee_uuid - just checking: is that correct?
-Also, should this be both GET and POST?
-"""
-# expect to get manager uuid, trainee name. Also expect to get template name as url argument. Will add relevant trainings
-# to employee plan.
-@app.route('/manager/add_template_to_training_plan', methods=['GET', 'POST'])
+# expect request to have the following header: authorization
+# expect the request to have the following fields: template_id, plan_id
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid, then adds the template_id to the
+# templates field of the given plan
+@app.route('/manager/add_template_to_training_plan', methods=['POST'])
 def add_template_to_training_plan():
-    manager_uuid = request.form["manager_uuid"]
-    trainee_uuid = request.form["trainee_uuid"]
-    template_uuid = request.form["template_uuid"]
-    training_plan_uuid = request.form["training_plan_uuid"]
-    
-    #find training plan
-    path_training = "Training Plan"
-    training_plan = db.child(path_training).child(training_plan_uuid).get().val()
-    training_templates = training_plan['templates']
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
 
-    #find template
-    path_template = "Templates"
-    template = db.child(path_template).child(template_uuid).get().val()
-    template_name = template['template_name']
+    req = request.get_json(force=True)
 
-    #add template to current training plan
-    training_templates[template_name] = template_uuid
+    template_id = req['template_id']
+    plan_id = req['plan_id']
 
-    #update training plan in data base
-    db.child(path_training).child(training_plan_uuid).update({'templates': training_templates})
+    # since we can't append to database, get the template_ids currently in the plan
+    templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
+
+    # set template data - this may not be right. Need to nail down the schema for plans and how template_ids are stored
+    templates.append(template_id)
+    db.child('Plans').child(plan_id).update(templates)
 
     return {"response" : "success"}
 
@@ -478,27 +417,34 @@ update methods - mark task complete
 """
 ###
 
-# expect to get trainee uuid, return json of list of trainings
+# expect request to have the following header: authorization
+# expect the request to have the following fields: None
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the trainee uuid, then returns the plan_id
+# it could be extended to return the ids of the trainings in the plan
 @app.route('/trainee/get_trainee_training_plan', methods=['GET'])
 def trainee_get_trainee_training_plan():
-    trainee_uuid = request.form["trainee_uuid"]
+    trainee_uuid = verify(request)
+    if trainee_uuid == None:
+        return 'Unauthorized', 401
 
-    path = "Training Plans"
-    training_plans = db.child(path).order_by_child('trainee').equal_to(trainee_uuid).get()
+    plan_id = db.child('Plans').order_by_key().equal_to(trainee_uuid).get().val()['plan']
 
-    return training_plans.val()
-
+    return plan_id
 
 
-# expect to get trainee uuid, return json of list of meetings
+
+# expect request to have the following header: authorization
+# expect the request to have the following fields: None
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the trainee uuid, then returns the list of meetings
 @app.route('/trainee/get_trainee_meetings', methods=['GET'])
 def get_trainee_meetings():
-    trainee_uuid = request.form["trainee_uuid"]
+    trainee_uuid = verify(request)
+    if trainee_uuid == None:
+        return 'Unauthorized', 401
 
-    path = "Trainees"
-    trainee = db.child(path).child(trainee_uuid).get()
-
-    meetings = trainee.val()['meetings']
+    meetings = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['meetings']
 
     return meetings
 
