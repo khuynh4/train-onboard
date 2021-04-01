@@ -412,7 +412,8 @@ def add_training_to_training_template():
         'other_links' : other_links,
         'note' : note,
         'due_date' : due_date,
-        'duration' : duration
+        'duration' : duration,
+        'complete' : 'false'
     }
     db.child('Trainings').child(training_key).set(data)
 
@@ -478,7 +479,8 @@ def add_task_to_training_plan():
         'other_links' : other_links,
         'note' : note,
         'due_date' : due_date,
-        'duration' : duration
+        'duration' : duration,
+        'complete' : 'false'
     }
     db.child('Trainings').child(training_key).set(data)
 
@@ -597,8 +599,8 @@ def remove_task_from_plan():
 ###
 """
 Trainee Methods
-query methods - view plan (partially done), view specific task in plan, view calendar, view meetings (done)
-update methods - mark task complete
+query methods - get plan_id (done), get task ids in plan (done), view specific task in plan or template (done), view meetings (done)
+update methods - mark task complete (done)
 """
 ###
 
@@ -607,17 +609,63 @@ update methods - mark task complete
 # the authorization header should contain the user's verification token received from logging in
 # this method verifies the verification token to get the trainee uuid, then returns the plan_id
 # it could be extended to return the ids of the trainings in the plan
-@app.route('/trainee/get_trainee_training_plan', methods=['GET'])
-def trainee_get_trainee_training_plan():
+@app.route('/trainee/get_trainee_plan_id', methods=['GET'])
+def trainee_get_plan_id():
     trainee_uuid = verify(request)
     if trainee_uuid == None:
         return 'Unauthorized', 401
 
-    plan_id = db.child('Plans').order_by_key().equal_to(trainee_uuid).get().val()['plan']
+    plan_id = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['plan']
 
     return plan_id
 
+# expect request to have the following header: authorization
+# expect request to have the following fields: plan_id
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token and queries the database to get
+# the list of training_ids from the plan (both from templates associated with the plan and trainings added directly to the plan).
+"""
+Note that this method is identical to the manager version - might be worth consolidating using a pulled out method
+"""
+@app.route('/trainee/get_trainee_plan_contents', methods=['GET'])
+def trainee_get_plan_contents():
+    trainee_uuid = verify(request)
+    if trainee_uuid == None:
+        return 'Unauthorized', 401
 
+    req = request.get_json(force=True)
+
+    plan_id = req['plan_id']
+
+    # get trainings added directly to the plan first
+    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+
+    # now get trainings from the templates
+    template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
+    for template_id in template_ids:
+        trainings.append(db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings'])
+    
+    return trainings
+
+# expect request to have the following header: authorization
+# expect the request to have the following fields: training_id
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token and queries the database to get
+# the training's contents
+"""
+Note that this method is identical to the manager version - might be worth consolidating using a pulled out method
+"""
+@app.route('/trainee/get_training', methods=['GET'])
+def get_training():
+    trainee_uuid = verify(request)
+    if trainee_uuid == None:
+        return 'Unauthorized', 401
+
+    req = request.get_json(force=True)
+
+    training_id = req['training_id']
+
+    return db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
 # expect request to have the following header: authorization
 # expect the request to have the following fields: None
@@ -632,6 +680,22 @@ def get_trainee_meetings():
     meetings = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['meetings']
 
     return meetings
+
+# expect request to have the following header: authorization
+# expect the request to have the following fields: training_id
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the trainee uuid, then marks the given training as complete
+@app.route('/trainee/mark_task_complete', methods=['POST'])
+def mark_task_complete():
+    trainee_uuid = verify(request)
+    if trainee_uuid == None:
+        return 'Unauthorized', 401
+
+    req = request.get_json(force=True)
+
+    training_id = req['training_id']
+
+    db.child('Trainings').child(training_id).update({'complete' : 'true'})
 
 
 
