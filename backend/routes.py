@@ -30,14 +30,53 @@ query methods - view plan, view specific task in plan, view calendar
 update methods - mark task complete
 I propose that the google calendar integration be done in the front end
 
-I feel like the databases should not point bidirectionally for this project. For simplicity's sake, it's easier if they go one way.
-Ie. company -> managers and employees
-manager -> employees and templates
-employee -> plan
-template -> trainings
-plan -> templates, trainings
-training -> training things like name, documentation links, other links, notes, due date
-no user db. No signup. We make their account as either a manager or a employee and give them the credentials to log in.
+The databases are not bidirectional - they point in a particular direction - see below:
+Companies
+->Company ID
+-->{name : string}
+-->{num_employees : string}
+-->managers
+--->{manager_id : manager_name}
+-->trainees
+--->{trainee_id : trainee_name}
+
+Managers
+->Manager ID
+-->{age : string}
+-->{name : string}
+-->trainees
+--->{trainee_id : trainee_name}
+-->templates
+--->{template_id : template_name}
+
+Templates
+->Template ID
+-->{training_id : training_name}
+
+Trainees
+->Trainee ID
+-->{age : string}
+-->{name : string}
+-->{plan : plan_id}
+
+Plans
+->Plan ID
+-->templates
+--->{template_id : template_name}
+-->trainings
+--->{training_id : training_name}
+
+Trainings
+->Training ID
+-->{name : string}
+-->{note : string}
+-->{due_date : string}
+-->{duration : string}
+-->{complete : string}
+-->documentation_links
+--->{link : name}
+-->other_links
+--->{link : name}
 """
 
 
@@ -172,8 +211,8 @@ def create_new_company():
     }
     db.child(path).child(identifier).set(data)
 
-    db.child(path).child(identifier).child("Managers").set(managers)
-    db.child(path).child(identifier).child("Trainees").set(trainees)
+    db.child(path).child(identifier).child("managers").set(managers)
+    db.child(path).child(identifier).child("trainees").set(trainees)
 
     return {"response" : "success"}
 
@@ -208,9 +247,9 @@ def add_new_manager():
     }
     db.child(path).child(manager_uuid).set(data)
 
-    db.child(path).child(manager_uuid).child("Trainees").set(trainees)
-    db.child(path).child(manager_uuid).child("Templates").set(templates)
-    db.child(path).child(manager_uuid).child("Meetings").set(meetings)
+    db.child(path).child(manager_uuid).child("trainees").set(trainees)
+    db.child(path).child(manager_uuid).child("templates").set(templates)
+    db.child(path).child(manager_uuid).child("meetings").set(meetings)
 
     return {"response" : "success"}
 
@@ -230,10 +269,10 @@ def add_new_trainee():
     # make a new plan for the trainee
     plan_key = db.generate_key()
     data = {
-        'templates' : 'none',
-        'trainings' : 'none'
+        'empty_id' : 'empty_name'
     }
-    db.child('Plans').child(plan_key).set(data)
+    db.child('Plans').child(plan_key).child("templates").set(data)
+    db.child('Plans').child(plan_key).child("trainings").set(data)
 
     # set trainee data
     path = 'Trainees'
@@ -286,7 +325,7 @@ def get_trainees():
     if manager_uuid == None:
         return 'Unauthorized', 401
 
-    trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["Trainees"]
+    trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["trainees"]
 
     return trainees
 
@@ -318,6 +357,9 @@ def manager_get_trainee_training_plan_id():
 # the authorization header should contain the user's verification token received from logging in
 # this method verifies the verification token and queries the database to get
 # the list of training_ids from the plan (both from templates associated with the plan and trainings added directly to the plan).
+"""
+TODO Not sure what will happen if the trainee has no trainings or templates - crash?
+"""
 @app.route('/manager/get_trainee_training_plan_contents', methods=['GET'])
 def manager_get_trainee_training_plan_contents():
     manager_uuid = verify(request)
@@ -328,13 +370,16 @@ def manager_get_trainee_training_plan_contents():
 
     plan_id = req['plan_id']
 
-    # get trainings added directly to the plan first
+    # get trainings added directly to the plan first (trainings will be a dict of training_id : training_name)
     trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
 
-    # now get trainings from the templates
+    # now get trainings from the templates (templates will be a dict of template_id : template_name)
     template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
-    for template_id in template_ids:
-        trainings.append(db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings'])
+    for template_id in template_ids.keys():
+        # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
+        template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
+        # merge the trainings from this template into the trainings dict
+        trainings.update(template_trainings)
     
     return trainings
 
@@ -385,6 +430,39 @@ def get_training():
     return db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
 # expect request to have the following header: authorization
+# expect the request to have the following fields: template_name
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid and adds a new empty template to the manager
+@app.route('/manager/new_empty_template', methods=['POST'])
+def new_empty_template():
+    manager_uuid = verify(request)
+    if manager_uuid == None:
+        return 'Unauthorized', 401
+
+    req = request.get_json(force=True)
+
+    template_name = req['template_name']
+
+    template_id = db.generate_key()
+
+    data = {"no_id" : "no_name"}
+
+    # make new empty template in Templates database
+    db.child('Templates').child(template_id).set(data)
+
+    # add template reference to manager
+    # since we can't append to database, get the template info from the manager (will be a dict of template_id : template_name)
+    templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['templates']
+
+    # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
+    templates.update({template_id : template_name})
+    db.child('Managers').child(manager_uuid).child('templates').update(templates)
+
+
+    return {"response" : "success"}
+
+
+# expect request to have the following header: authorization
 # expect the request to have the following fields: template_id, training_name, documentation_links, other_links, note, due_date, duration
 # the authorization header should contain the user's verification token received from logging in
 # this method verifies the verification token to get the manager uuid, makes a new training, and adds that training to the given template
@@ -408,26 +486,26 @@ def add_training_to_training_template():
     training_key = db.generate_key()
     data = {
         'name' : training_name,
-        'documentation_links' : documentation_links,
-        'other_links' : other_links,
         'note' : note,
         'due_date' : due_date,
         'duration' : duration,
         'complete' : 'false'
     }
     db.child('Trainings').child(training_key).set(data)
+    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+    db.child('Trainings').child(training_key).child('other_links').set(other_links)
 
-    # since we can't append to database, get the trainings currently in the template
+    # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
     trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
 
-    # set template data - note that this might not be right depending on how trainings are listed in there
-    trainings.append({training_key : training_name})
+    # set template data by combining the templates dict with a dict of the new training_id : training name to be added
+    trainings.update({training_key : training_name})
     db.child('Templates').child(template_id).update(trainings)
 
     return {"response" : "success"}
 
 # expect request to have the following header: authorization
-# expect the request to have the following fields: template_id, plan_id
+# expect the request to have the following fields: template_id, template_name, plan_id
 # the authorization header should contain the user's verification token received from logging in
 # this method verifies the verification token to get the manager uuid, then adds the template_id to the
 # templates field of the given plan
@@ -440,14 +518,15 @@ def add_template_to_training_plan():
     req = request.get_json(force=True)
 
     template_id = req['template_id']
+    template_name = req['template_name']
     plan_id = req['plan_id']
 
-    # since we can't append to database, get the template_ids currently in the plan
+    # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
     templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
 
-    # set template data - this may not be right. Need to nail down the schema for plans and how template_ids are stored
-    templates.append(template_id)
-    db.child('Plans').child(plan_id).update(templates)
+    # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
+    templates.update({template_id : template_name})
+    db.child('Plans').child(plan_id).child('templates').update(templates)
 
     return {"response" : "success"}
 
@@ -465,8 +544,8 @@ def add_task_to_training_plan():
 
     plan_id = req['plan_id']
     training_name = req['training_name']
-    documentation_links = req['documentation_links']
-    other_links = req['other_links']
+    documentation_links = req['documentation_links'] # should be a dict of {link : name}
+    other_links = req['other_links'] # should be a dict of {link : name}
     note = req['note']
     due_date = req['due_date']
     duration = req['duration']
@@ -475,20 +554,20 @@ def add_task_to_training_plan():
     training_key = db.generate_key()
     data = {
         'name' : training_name,
-        'documentation_links' : documentation_links,
-        'other_links' : other_links,
         'note' : note,
         'due_date' : due_date,
         'duration' : duration,
         'complete' : 'false'
     }
     db.child('Trainings').child(training_key).set(data)
+    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+    db.child('Trainings').child(training_key).child('other_links').set(other_links)
 
-    # since we can't append to database, get the trainings currently in the plan
+    # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
     trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
 
-    # set plan's training data - note that this might not be right depending on how trainings are listed in there
-    trainings.append({training_key : training_name})
+    # set plan's training data by combining the trainings dict with a dict of the new training_id : training_name to be added
+    trainings.update({training_key : training_name})
     db.child('Plans').child(plan_id).child('trainings').update(trainings)
 
     return {"response" : "success"}
@@ -507,21 +586,21 @@ def add_info_to_task():
     req = request.get_json(force=True)
 
     training_id = req['training_id']
-    documentation_links = req['documentation_links']
-    other_links = req['other_links']
+    documentation_links = req['documentation_links'] # should be a dict of {link : name}
+    other_links = req['other_links'] # should be a dict of {link : name}
 
     # since we can't append to database, need to get current list of things, then add to it
     training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
-    if documentation_links != "":
-        original_documentation_links = training['documentation_links']
-        new_documentation_links = original_documentation_links + documentation_links
-        db.child('Trainings').child(training_id).child('documentation_links').update(new_documentation_links)
+    if documentation_links:
+        original_documentation_links = training['documentation_links'] # will be a dict of {link : name}
+        original_documentation_links.update(documentation_links) # combine the original dict with the new dict
+        db.child('Trainings').child(training_id).child('documentation_links').update(original_documentation_links)
 
-    if other_links != "":
-        original_other_links = training['other_links']
-        new_other_links = original_other_links + other_links
-        db.child('Trainings').child(training_id).child('other_links').update(new_other_links)
+    if other_links:
+        original_other_links = training['other_links'] # will be a dict of {link : name}
+        original_other_links.update(other_links) # combine the original dict with the new dict
+        db.child('Trainings').child(training_id).child('other_links').update(original_other_links)
 
     
 # expect request to have the following header: authorization
@@ -543,16 +622,16 @@ def update_task_info():
     due_date = req['due_date']
     duration = req['duration']
 
-    if training_name != "":
+    if training_name:
         db.child('Trainings').child(training_id).child('name').update(training_name)
     
-    if note != "":
+    if note:
         db.child('Trainings').child(training_id).child('note').update(note)
 
-    if due_date != "":
+    if due_date:
         db.child('Trainings').child(training_id).child('due_date').update(due_date)
 
-    if duration != "":
+    if duration:
         db.child('Trainings').child(training_id).child('duration').update(duration)
 
 # expect request to have the following header: authorization
@@ -571,8 +650,14 @@ def remove_task_from_template():
     template_id = req['template_id']
     training_id = req['training_id']
 
-    # possibly not correct yet - depends on schema - this code gives a hint of how the schema should look to make it easy to manage
-    db.child('Templates').child(template_id).child(training_id).remove()
+    # get the trainings currently in the template (will be a dict of training_id : training_name)
+    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+    trainings.pop(training_id, None)
+    # update the templates entry
+    db.child('Templates').child(template_id).update(trainings)
+
+    # remove the training entry in the Trainings table that corresponds to the training_id
     db.child('Trainings').child(training_id).remove()
 
 # expect request to have the following header: authorization
@@ -591,8 +676,14 @@ def remove_task_from_plan():
     plan_id = req['plan_id']
     training_id = req['training_id']
 
-    # possibly not correct yet - depends on schema - this code gives a hint of how the schema should look to make it easy to manage
-    db.child('Plans').child(plan_id).child('trainings').child(training_id).remove()
+    # get the trainings currently in the plan (will be a dict of training_id : training_name)
+    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[training_id]
+    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+    trainings.pop(training_id, None)
+    # update the plan entry
+    db.child('Plans').child(training_id).update(trainings)
+
+    # remove the training entry in the Trainings table that corresponds to the training_id
     db.child('Trainings').child(training_id).remove()
 
 
