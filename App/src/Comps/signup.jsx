@@ -84,18 +84,15 @@ export class Signup extends React.Component {
     render() {
         return (
             <Form onSubmit={ this.handleSubmit }>
-                <Form.Group controlId="formFistName">
+                <Form.Group controlId="formFirstName">
                     <Form.Label>First Name</Form.Label>
                     <Form.Control 
                         type="text" 
-                        placeholder="Enter email"
+                        placeholder="First Name"
                         name="first_name"
                         value={ this.state.first_name }
                         onChange={ this.handleFirstNameChange } 
                     />
-                    <Form.Text className="text-muted">
-                    We'll never share your email with anyone else.
-                    </Form.Text>
                 </Form.Group>
 
                 <Form.Group controlId="formLastName">
@@ -113,11 +110,14 @@ export class Signup extends React.Component {
                     <Form.Label>Email</Form.Label>
                     <Form.Control 
                         type="email" 
-                        placeholder="Enter Emai Address"
+                        placeholder="Enter Email Address"
                         name="email"
                         value={ this.state.email }
                         onChange={ this.handleEmailChange } 
                     />
+                    <Form.Text className="text-muted">
+                    We'll never share your email with anyone else.
+                    </Form.Text>
                 </Form.Group>
 
                 <Form.Group controlId="formAge">
@@ -153,12 +153,12 @@ export class Signup extends React.Component {
                     />
                 </Form.Group>
 
-                <Form.Group controlId="formConfrimPass">
-                    <Form.Label>Confrim Password</Form.Label>
+                <Form.Group controlId="formConfirmPass">
+                    <Form.Label>Confirm Password</Form.Label>
                     <Form.Control 
                         type="password" 
-                        placeholder="Confrim Password"
-                        name="confrim_pass"
+                        placeholder="Confirm Password"
+                        name="confirm_pass"
                         value={ this.state.confirm_pass }
                         onChange={ this.handleConfirmPassChange } 
                     />

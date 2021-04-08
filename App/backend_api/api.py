@@ -143,29 +143,29 @@ def signup():
     confirm_pass = response['confirm_pass']
 
     if not first_name:
-        return jsonify({'headers': header, 'msg': 'First Name is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'First Name is missing'}), 400
     
     if not last_name:
-        return jsonify({'headers': header, 'msg': 'Last Name is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Last Name is missing'}), 400
     
     if not email:
-        return jsonify({'headers': header, 'msg': 'Email is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Email is missing'}), 400
     
     if not age:
-        return jsonify({'headers': header, 'msg': 'Age is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Age is missing'}), 400
     
     if not address:
-        return jsonify({'headers': header, 'msg': 'Address is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Address is missing'}), 400
     
     if not password:
-        return jsonify({'headers': header, 'msg': 'Password is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Password is missing'}), 400
 
     if not confirm_pass:
-        return jsonify({'headers': header, 'msg': 'Confrim Password is Missing'}), 400
+        return jsonify({'headers': header, 'msg': 'Confirm Password is missing'}), 400
 
     
     if not password == confirm_pass:
-        return jsonify({'headers': header, 'msg': 'Password and confrim password do not match.'}), 400
+        return jsonify({'headers': header, 'msg': 'Password and confirm password do not match.'}), 400
 
     try:
         user = auth.create_user_with_email_and_password(email, password)
