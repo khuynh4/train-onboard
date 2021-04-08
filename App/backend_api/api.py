@@ -454,6 +454,444 @@ def get_training():
 
     return jsonify(payload)
 
+# expect the request to have the following fields: manager_uuid, template_name
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the template_name is supplied by the client
+# this method adds a new empty template to the manager and returns a json dictionary of template_id : template_name
+# TODO possibly rewrite how the empty template is added to the Templates database so it doesn't have an entry at all.
+# Would require rewriting the methods that modify templates to check for that and make a new entry if it doesn't exist. Probably
+# better than how it is now, where there's just a dummy training ID for each template.
+@app.route('/manager/new_empty_template', methods=['POST'])
+def new_empty_template():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    manager_uuid = req.get('manager_uuid')
+    template_name = req.get('template_name')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not template_name:
+        return jsonify({'headers': header, 'msg': 'Missing template name'}), 400
+
+    template_id = db.generate_key()
+
+    data = {"no_training_id" : "no_training_name"}
+
+    # make new empty template in Templates database
+    db.child('Templates').child(template_id).set(data)
+
+    # add template reference to manager
+    # since we can't append to database, get the template info from the manager (will be a dict of template_id : template_name)
+    try:
+        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['templates']
+    except:
+        templates = {}
+
+    templates.update({template_id : template_name})
+
+    # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
+    try:
+        db.child('Managers').child(manager_uuid).child('templates').update(templates)
+    except: # the Manager doesn't currently have any templates so it needs to bet set for the first time
+        db.child('Managers').child(manager_uuid).child('templates').set(templates)
+
+    payload = {
+        'headers' : header,
+        'template' : {template_id : template_name}
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, template_id, training_name, documentation_links, other_links, note, due_date, duration
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the template_id can be gotten from the endpoint /manager/new_empty_template or /manager/get_training_templates
+# the training_name is a string supplied by the user
+# the documentation links are a dictionary of link : name supplied by the user
+# the other links are a dictionary of link : name supplied by the user
+# the note is a string supplied by the user
+# the due_date is a string supplied by the user
+# the duration is a string supplied by the user
+# this method makes a new training and adds that training to the given template. It returns the training_id : training_name
+@app.route('/manager/add_training_to_training_template', methods=['POST'])
+def add_training_to_training_template():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    template_id = req.get('template_id')
+    training_name = req.get('training_name')
+    documentation_links = req.get('documentation_links')
+    other_links = req.get('other_links')
+    note = req.get('note')
+    due_date = req.get('due_date')
+    duration = req.get('duration')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not template_id:
+        return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
+    if not training_name:
+        return jsonify({'headers': header, 'msg': 'Missing training name'}), 400
+    if not documentation_links:
+        return jsonify({'headers': header, 'msg': 'Missing documentation links'}), 400
+    if not other_links:
+        return jsonify({'headers': header, 'msg': 'Missing other links'}), 400
+    if not note:
+        return jsonify({'headers': header, 'msg': 'Missing note'}), 400
+    if not due_date:
+        return jsonify({'headers': header, 'msg': 'Missing due date'}), 400
+    if not duration:
+        return jsonify({'headers': header, 'msg': 'Missing duration'}), 400
+
+    # make a new training
+    training_key = db.generate_key()
+    data = {
+        'name' : training_name,
+        'note' : note,
+        'due_date' : due_date,
+        'duration' : duration,
+        'complete' : 'false'
+    }
+    db.child('Trainings').child(training_key).set(data)
+    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+    db.child('Trainings').child(training_key).child('other_links').set(other_links)
+
+    # TODO might want to rewrite this to handle templates with no trainings in them
+    # TODO make robust once decide that
+    # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
+    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+
+    # set template data by combining the templates dict with a dict of the new training_id : training name to be added
+    trainings.update({training_key : training_name})
+    db.child('Templates').child(template_id).update(trainings)
+
+    payload = {
+        'headers' : header,
+        'training' : {training_key : training_name}
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, template_id, template_name, plan_id
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the template_id can be gotten from the endpoint /manager/new_empty_template or /manager/get_training_templates
+# the template name is a string supplied by the user
+# the plan id can be gotten from the endpoint /manager/get_trainee_training_plan_id
+# this method adds the template_id to the templates field of the given plan and returns success or failure
+@app.route('/manager/add_template_to_training_plan', methods=['POST'])
+def add_template_to_training_plan():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    template_id = req.get('template_id')
+    template_name = req.get('template_name')
+    plan_id = req.get('plan_id')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not template_id:
+        return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
+    if not template_name:
+        return jsonify({'headers': header, 'msg': 'Missing template name'}), 400
+    if not plan_id:
+        return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
+
+    # TODO make robust
+    # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
+    templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
+
+    # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
+    templates.update({template_id : template_name})
+    db.child('Plans').child(plan_id).child('templates').update(templates)
+
+    payload = {
+        'headers' : header,
+        'response' : "success"
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, plan_id, training_name, documentation_links, other_links, note, due_date, duration
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the plan id can be gotten from the endpoint /manager/get_trainee_training_plan_id
+# the training_name is a string supplied by the user
+# the documentation links are a dictionary of link : name supplied by the user
+# the other links are a dictionary of link : name supplied by the user
+# the note is a string supplied by the user
+# the due_date is a string supplied by the user
+# the duration is a string supplied by the user
+# this method makes a new training and adds that training to the given plan. It returns the training_id : training_name
+@app.route('/manager/add_training_to_training_plan', methods=['POST'])
+def add_training_to_training_plan():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    plan_id = req.get('plan_id')
+    training_name = req.get('training_name')
+    documentation_links = req.get('documentation_links')
+    other_links = req.get('other_links')
+    note = req.get('note')
+    due_date = req.get('due_date')
+    duration = req.get('duration')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not plan_id:
+        return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
+    if not training_name:
+        return jsonify({'headers': header, 'msg': 'Missing training name'}), 400
+    if not documentation_links:
+        return jsonify({'headers': header, 'msg': 'Missing documentation links'}), 400
+    if not other_links:
+        return jsonify({'headers': header, 'msg': 'Missing other links'}), 400
+    if not note:
+        return jsonify({'headers': header, 'msg': 'Missing note'}), 400
+    if not due_date:
+        return jsonify({'headers': header, 'msg': 'Missing due date'}), 400
+    if not duration:
+        return jsonify({'headers': header, 'msg': 'Missing duration'}), 400
+
+    # make a new training
+    training_key = db.generate_key()
+    data = {
+        'name' : training_name,
+        'note' : note,
+        'due_date' : due_date,
+        'duration' : duration,
+        'complete' : 'false'
+    }
+    db.child('Trainings').child(training_key).set(data)
+    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+    db.child('Trainings').child(training_key).child('other_links').set(other_links)
+
+    # TODO might want to rewrite this to handle plans with no trainings in them
+    # TODO make robust once decide that
+    # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
+    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+
+    # set plan's training data by combining the trainings dict with a dict of the new training_id : training_name to be added
+    trainings.update({training_key : training_name})
+    db.child('Plans').child(plan_id).child('trainings').update(trainings)
+
+    payload = {
+        'headers' : header,
+        'training' : {training_key : training_name}
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, training_id, documentation_links, other_links
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the training_id can be gotten from the endpoint /manager/add_training_to_training_plan, /manager/add_training_to_training_template, or /manager/get_trainee_training_plan_contents
+# the documentation links are a dictionary of link : name supplied by the user
+# the other links are a dictionary of link : name supplied by the user
+# manager_uuid and training_id are required. For the other fields, if there is nothing to be added, do not include them in the request.
+# this method APPENDS info to the relevant fields
+@app.route('/manager/add_info_to_training', methods=['POST'])
+def add_info_to_training():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    training_id = req.get('training_id')
+    documentation_links = req.get('documentation_links')
+    other_links = req.get('other_links')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    # TODO make robust
+    # since we can't append to database, need to get current list of things, then add to it
+    training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
+
+    if documentation_links:
+        original_documentation_links = training['documentation_links'] # will be a dict of {link : name}
+        original_documentation_links.update(documentation_links) # combine the original dict with the new dict
+        db.child('Trainings').child(training_id).child('documentation_links').update(original_documentation_links)
+
+    if other_links:
+        original_other_links = training['other_links'] # will be a dict of {link : name}
+        original_other_links.update(other_links) # combine the original dict with the new dict
+        db.child('Trainings').child(training_id).child('other_links').update(original_other_links)
+
+    payload = {
+        'headers' : header,
+        'response' : "success"
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, training_id, training_name, note, due_date, duration
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the training_id can be gotten from the endpoint /manager/add_training_to_training_plan, /manager/add_training_to_training_template, or /manager/get_trainee_training_plan_contents
+# training_name is a string supplied by the user
+# note is a string supplied by the user
+# due_date is a string supplied by the user
+# duration is a string supplied by the user
+# manager_uuid and training_id are required. For the other fields, put an empty string in the fields that you don't want to overwrite
+# the authorization header should contain the user's verification token received from logging in
+# this method verifies the verification token to get the manager uuid, and OVERWRITES info in the relevant fields
+@app.route('/manager/update_training_info', methods=['POST'])
+def update_training_info():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    training_id = req.get('training_id')
+    training_name = req.get('training_name')
+    note = req.get('note')
+    due_date = req.get('due_date')
+    duration = req.get('duration')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    # TODO make robust
+    if training_name:
+        db.child('Trainings').child(training_id).child('name').update(training_name)
+    
+    if note:
+        db.child('Trainings').child(training_id).child('note').update(note)
+
+    if due_date:
+        db.child('Trainings').child(training_id).child('due_date').update(due_date)
+
+    if duration:
+        db.child('Trainings').child(training_id).child('duration').update(duration)
+
+    payload = {
+        'headers' : header,
+        'response' : "success"
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: manager_uuid, template_id, training_id
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the template_id can be gotten from the endpoint /manager/new_empty_template or /manager/get_training_templates
+# the training_id can be gotten from the endpoint /manager/add_training_to_training_plan, /manager/add_training_to_training_template, or /manager/get_trainee_training_plan_contents
+# this method uses the template_id and training_id to remove the training
+# from the template and delete it from the database (safe, since it can only be pointed to from the template)
+@app.route('/manager/remove_training_from_template', methods=['POST'])
+def remove_training_from_template():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    template_id = req.get('template_id')
+    training_id = req.get('training_id')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not template_id:
+        return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    #TODO make robust
+    # get the trainings currently in the template (will be a dict of training_id : training_name)
+    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+    trainings.pop(training_id, None)
+    # update the templates entry
+    db.child('Templates').child(template_id).update(trainings)
+
+    # remove the training entry in the Trainings table that corresponds to the training_id
+    db.child('Trainings').child(training_id).remove()
+
+    payload = {
+        'headers' : header,
+        'response' : "success"
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: plan_id, training_id
+# this method verifies the verification token and uses the plan_id and training_id to remove the training
+# from the plan and delete it from the database (safe, since it can only be pointed to from the plan)
+@app.route('/manager/remove_training_from_plan', methods=['POST'])
+def remove_training_from_plan():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+    plan_id = req.get('plan_id')
+    training_id = req.get('training_id')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not plan_id:
+        return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    # TODO make robust
+    # get the trainings currently in the plan (will be a dict of training_id : training_name)
+    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[training_id]
+    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+    trainings.pop(training_id, None)
+    # update the plan entry
+    db.child('Plans').child(training_id).update(trainings)
+
+    # remove the training entry in the Trainings table that corresponds to the training_id
+    db.child('Trainings').child(training_id).remove()
+
+    payload = {
+        'headers' : header,
+        'response' : "success"
+    }
+
+    return jsonify(payload)
+
+
+
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
