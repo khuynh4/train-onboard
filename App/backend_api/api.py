@@ -79,16 +79,16 @@ def index():
 @app.route('/api/login', methods=['POST'])
 @cross_origin()
 def login():
-    login_json = request.get_json()
-
     #header required to send information between servers cross origin
     header = {'Access-Control-Allow-Origin': '*'}
 
-    if not login_json:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
 
-    email = login_json['email']
-    password = login_json['password']
+    email = req.get('email')
+    password = req.get('password')
 
     if not email:
         return jsonify({'headers': header, 'msg': 'email is missing'}), 400
@@ -129,18 +129,18 @@ def login():
 def signup():
     header = {'Access-Control-Allow-Origin': '*'}
     #receive data from front end
-    response = request.get_json()
-
-    if not response:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    first_name = response['first_name']
-    last_name = response['last_name']
-    email = response['email']
-    age = response['age']
-    address = response['address']
-    password = response['password']
-    confirm_pass = response['confirm_pass']
+    first_name = req.get('first_name')
+    last_name = req.get('last_name')
+    email = req.get('email')
+    age = req.get('age')
+    address = req.get('address')
+    password = req.get('password')
+    confirm_pass = req.get('confirm_pass')
 
     if not first_name:
         return jsonify({'headers': header, 'msg': 'First Name is missing'}), 400
@@ -248,15 +248,21 @@ def get_trainees():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
+    manager_uuid = req.get('manager_uuid')
+
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
 
-    trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["trainees"]
+    # TODO rename "Trainees" to trainees OR make all keys capitalized in databases
+    try:
+        trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["Trainees"]
+    except:
+        trainees = {}
 
     payload = {
         'headers': header,
@@ -274,19 +280,23 @@ def manager_get_trainee_training_plan_id():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
-    trainee_uuid = req['trainee_uuid']
+    manager_uuid = req.get('manager_uuid')
+    trainee_uuid = req.get('trainee_uuid')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
     if not trainee_uuid:
         return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
 
-    plan_id = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]['plan']
+    try:
+        plan_id = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]['plan']
+    except:
+        plan_id = ""
 
     payload = {
         'headers': header,
@@ -300,20 +310,18 @@ def manager_get_trainee_training_plan_id():
 # the plan_id field should contain the plan_id of the plan which should be retrieved. This value can be gotten from the /manager/get_trainee_training_plan_id endpoint
 # this method uses the plan_id and queries the Plans database to get the dictionary of training_id : training_name from the plan (both from the templates associated with
 # the plan and trainings added directly to the plan). It returns a json of the dictionary of training_id : training_name.
-"""
-TODO Not sure what will happen if the trainee has no trainings or templates - crash?
-"""
 @app.route('/manager/get_trainee_training_plan_contents', methods=['GET'])
 def manager_get_trainee_training_plan_contents():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
-    plan_id = req['plan_id']
+    manager_uuid = req.get('manager_uuid')
+    plan_id = req.get('plan_id')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
@@ -321,15 +329,21 @@ def manager_get_trainee_training_plan_contents():
         return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
 
     # get trainings added directly to the plan first (trainings will be a dict of training_id : training_name)
-    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+    try:
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+    except:
+        trainings = {}
 
     # now get trainings from the templates (templates will be a dict of template_id : template_name)
-    template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
-    for template_id in template_ids.keys():
-        # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
-        template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
-        # merge the trainings from this template into the trainings dict
-        trainings.update(template_trainings)
+    try:
+        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
+        for template_id in template_ids.keys():
+            # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
+            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
+            # merge the trainings from this template into the trainings dict
+            trainings.update(template_trainings)
+    except:
+        pass
 
     payload = {
         'headers' : header,
@@ -347,16 +361,20 @@ def get_training_templates():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
+    manager_uuid = req.get('manager_uuid')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
 
-    templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['templates']
+    try:
+        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['templates']
+    except:
+        templates = {}
 
     payload = {
         'headers' : header,
@@ -375,19 +393,23 @@ def get_training_template():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
-    template_id = req['template_id']
+    manager_uuid = req.get('manager_uuid')
+    template_id = req.get('template_id')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
     if not template_id:
         return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
 
-    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+    try:
+        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+    except:
+        trainings = {}
 
     payload = {
         'headers' : header,
@@ -407,19 +429,23 @@ def get_training():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
-    req = request.get_json()
-    if not req:
+    try:
+        req = request.get_json(force=True)
+    except:
         return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
     
-    manager_uuid = req['manager_uuid']
-    training_id = req['training_id']
+    manager_uuid = req.get('manager_uuid')
+    training_id = req.get('training_id')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
     if not training_id:
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
-    training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
+    try:
+        training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
+    except:
+        training = {}
 
     payload = {
         'headers' : header,

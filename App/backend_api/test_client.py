@@ -132,8 +132,16 @@ params = {
 r = requests.post(url, data=params)
 print("verification token = {}".format(r.text))
 
-url = 'http://localhost:8080/manager/get_trainees'
-headers = {'authorization' : r.text}
-r = requests.get(url, headers=headers)
+url = 'http://localhost:5000/manager/get_trainees'
+params = {'manager_uuid' : 'NYFVp8qdnPhUX3Q4pzJ1LMbwvWh1'}
+data = json.dumps(params)
+r = requests.get(url, data=data)
 print(r.text)
 """
+
+# test manager getting templates
+url = 'http://localhost:5000/manager/get_training_templates'
+params = {'manager_uuid' : 'NYFVp8qdnPhUX3Q4pzJ1LMbwvWh1'}
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
