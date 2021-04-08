@@ -7,17 +7,15 @@ On Linux, you can do the same with `python3 -m venv venv`, activate it with `sou
 You can leave the virtual environment by typing `deactivate`.
 
 ### `python3 api.py` or `python api.py`
-In the "train-app/App/backend_api" directory, run the above command
+In the "train-app/App/backend_api" directory, run the above command.
 This will start and run the backend flask api on http://127.0.0.1:5000/ 
 
 ### `npm install react-router-dom react-bootstrap bootstrap`
-In a new command line window, change directory into the `App` directory and type the above prompt to install the neccessary node_modules
+In a new command line window, change directory into the `App` directory and type the above prompt to install the neccessary node_modules.
 
 ### `npm start`
-After the backend server and the node modules have been installed is running type the above command in the "train-app/App" directory to start the frontend server
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+After the backend server and the node modules have been installed is running type the above command in the "train-app/App" directory to start the frontend server.
+Runs the app in the development mode. Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+The page will reload if you make edits. You will also see any lint errors in the console.
 
