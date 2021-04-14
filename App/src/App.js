@@ -1,12 +1,21 @@
 import './App.css';
-import React, { useState } from 'react';
+import React from 'react';
 import { Header } from './Comps/header.jsx';
 import {
   BrowserRouter as Router,
   Switch,
   Route,
-  Link
+  Redirect
 } from "react-router-dom";
+import { Home } from './Comps/home.jsx';
+import { TraineeLayout } from './Layouts/traineeLayout.jsx';
+import { Navigation } from "./Comps/Navbars/TraineeNavbar.jsx";
+import { HomeNavbar } from "./Comps/Navbars/HomeNavbar.jsx";
+import "bootstrap/dist/css/bootstrap.min.css";
+import { TraineeDashboard } from "./Views/TraineeDashboard.jsx"
+import { Sidebar } from "./Comps/Sidebars/TraineeSidebar.jsx";
+import { Login } from "./Comps/Authentication/login.jsx";
+import { Signup } from "./Comps/Authentication/signup.jsx";
 
 class App extends React.Component {
 
@@ -71,11 +80,25 @@ class App extends React.Component {
       console.log(this.state);
 
       return (
-          <Router>
-            <div className="App">
-              <Header isLoggedIn={ this.state.isLoggedIn } name={ this.state.name } onLogin={ this.onLogin } onSignup={ this.onSignup } onSignupError={ this.onSignupError }onLogout={ this.onLogout } onLoginError={this.onLoginError }/>
-            </div>
-          </Router>
+        <Router>
+          <Switch>
+            <Route exact path="/">
+              <HomeNavbar />
+              <Home />
+            </Route>
+            <Route path="/login">
+              <HomeNavbar />
+              <Login onLogin={ this.onLogin } onLoginError={ this.onLoginError }/>
+            </Route>
+            <Route path="/signup">
+              <HomeNavbar />
+              <Signup />
+            </Route>
+            <Route path="/user">
+              <TraineeLayout name={ this.state.name } onLogout={ this.onLogout }/>
+            </Route>
+          </Switch>
+        </Router>
       );
     }
 }

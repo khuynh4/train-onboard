@@ -2,12 +2,11 @@ import React from 'react';
 import {
     BrowserRouter as Router,
     Switch,
-    Route,
-    useParams,
+    Route
   } from "react-router-dom";
 import { Navbar,Nav,Form,FormControl,Button } from 'react-bootstrap'
-import { Login } from './login';
-import { Signup } from './signup';
+import { Login } from './Authentication/login';
+import { Signup } from './Authentication/signup';
 import LoggedInDisplay from './loggedInDisplay';
 import 'bootstrap/dist/css/bootstrap.css';
 
@@ -18,7 +17,7 @@ export function Header(props) {
                 <div className="col-md-12">
                     <Router>
                         <Navbar bg="dark" variant="dark" expand="lg" sticky="top">
-                            <Navbar.Brand href="/index">Train</Navbar.Brand>
+                            <Navbar.Brand href="/">Train</Navbar.Brand>
                                 <Nav className="mr-auto">
                                     <LoggedInDisplay isLoggedIn={ props.isLoggedIn } name={ props.name } onLogout={ props.onLogout }key="loggedInDisplay"/>
                                 </Nav>
