@@ -242,7 +242,7 @@ remove methods - remove task from specific employee plan or specific template (w
 # expect request to have the following fields: manager_uuid
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # this method uses the manager_uuid and queries the database to get a dictionary of trainee_uuid/name pairs of the manager's trainees
-# and returns a json of the dictionary of trainee_uuid/name pairs
+# and returns a json of the dictionary of {trainee_uuid : name} pairs
 @app.route('/manager/get_trainees', methods=['GET'])
 def get_trainees():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -274,7 +274,7 @@ def get_trainees():
 # expect request to have the following fields: manager_uuid, trainee_uuid
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the trainee_uuid field should contain the uuid of the trainee whose plan should be retrieved. This value can be gotten from the /manager/get_trainees endpoint
-# this method uses the trainee_uuid and queries the Trainees database to get a string of the trainee's plan_id and returns a json of the plan_id
+# this method uses the trainee_uuid and queries the Trainees database to get a string of the trainee's plan_id and return it
 @app.route('/manager/get_trainee_training_plan_id', methods=['GET'])
 def manager_get_trainee_training_plan_id():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -309,7 +309,7 @@ def manager_get_trainee_training_plan_id():
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the plan_id field should contain the plan_id of the plan which should be retrieved. This value can be gotten from the /manager/get_trainee_training_plan_id endpoint
 # this method uses the plan_id and queries the Plans database to get the dictionary of training_id : training_name from the plan (both from the templates associated with
-# the plan and trainings added directly to the plan). It returns a json of the dictionary of training_id : training_name.
+# the plan and trainings added directly to the plan). It returns a json of the dictionary of training_id : training_name pairs.
 @app.route('/manager/get_trainee_training_plan_contents', methods=['GET'])
 def manager_get_trainee_training_plan_contents():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -425,7 +425,7 @@ def get_training_template():
 # this method uses the training_id to query the Trainings database to get the training contents. It returns the training
 # contents as a json.
 @app.route('/manager/get_training', methods=['GET'])
-def get_training():
+def manager_get_training():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
@@ -457,7 +457,7 @@ def get_training():
 # expect the request to have the following fields: manager_uuid, template_name
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the template_name is supplied by the client
-# this method adds a new empty template to the manager and returns a json dictionary of template_id : template_name
+# this method adds a new empty template to the manager and returns a dictionary of the newly created template_id : template_name
 # TODO possibly rewrite how the empty template is added to the Templates database so it doesn't have an entry at all.
 # Would require rewriting the methods that modify templates to check for that and make a new entry if it doesn't exist. Probably
 # better than how it is now, where there's just a dummy training ID for each template.
@@ -517,7 +517,8 @@ def new_empty_template():
 # the note is a string supplied by the user
 # the due_date is a string supplied by the user
 # the duration is a string supplied by the user
-# this method makes a new training and adds that training to the given template. It returns the training_id : training_name
+# this method makes a new training and adds that training to the given template. It returns a dictionary of the newly created training_id : training_name
+# or it returns a dictionary of {"failure" : "failure"}
 @app.route('/manager/add_training_to_training_template', methods=['POST'])
 def add_training_to_training_template():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -555,30 +556,34 @@ def add_training_to_training_template():
         return jsonify({'headers': header, 'msg': 'Missing duration'}), 400
 
     # make a new training
-    training_key = db.generate_key()
-    data = {
-        'name' : training_name,
-        'note' : note,
-        'due_date' : due_date,
-        'duration' : duration,
-        'complete' : 'false'
-    }
-    db.child('Trainings').child(training_key).set(data)
-    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
-    db.child('Trainings').child(training_key).child('other_links').set(other_links)
+    try:
+        training_key = db.generate_key()
+        data = {
+            'name' : training_name,
+            'note' : note,
+            'due_date' : due_date,
+            'duration' : duration,
+            'complete' : 'false'
+        }
+        db.child('Trainings').child(training_key).set(data)
+        db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+        db.child('Trainings').child(training_key).child('other_links').set(other_links)
 
-    # TODO might want to rewrite this to handle templates with no trainings in them
-    # TODO make robust once decide that
-    # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
-    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+        # TODO might want to rewrite this to handle templates with no trainings in them
+        # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
+        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
 
-    # set template data by combining the templates dict with a dict of the new training_id : training name to be added
-    trainings.update({training_key : training_name})
-    db.child('Templates').child(template_id).update(trainings)
+        # set template data by combining the templates dict with a dict of the new training_id : training name to be added
+        trainings.update({training_key : training_name})
+        db.child('Templates').child(template_id).update(trainings)
+
+        training = {training_key : training_name}
+    except:
+        training = {"failure" : "failure"}
 
     payload = {
         'headers' : header,
-        'training' : {training_key : training_name}
+        'training' : training
     }
 
     return jsonify(payload)
@@ -588,7 +593,7 @@ def add_training_to_training_template():
 # the template_id can be gotten from the endpoint /manager/new_empty_template or /manager/get_training_templates
 # the template name is a string supplied by the user
 # the plan id can be gotten from the endpoint /manager/get_trainee_training_plan_id
-# this method adds the template_id to the templates field of the given plan and returns success or failure
+# this method adds the template_id to the templates field of the given plan and returns "success" or "failure"
 @app.route('/manager/add_template_to_training_plan', methods=['POST'])
 def add_template_to_training_plan():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -613,17 +618,21 @@ def add_template_to_training_plan():
     if not plan_id:
         return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
 
-    # TODO make robust
-    # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
-    templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
+    try:
+        # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
+        templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
 
-    # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
-    templates.update({template_id : template_name})
-    db.child('Plans').child(plan_id).child('templates').update(templates)
+        # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
+        templates.update({template_id : template_name})
+        db.child('Plans').child(plan_id).child('templates').update(templates)
+
+        response = "success"
+    except:
+        response = "failure"
 
     payload = {
         'headers' : header,
-        'response' : "success"
+        'response' : response
     }
 
     return jsonify(payload)
@@ -637,7 +646,8 @@ def add_template_to_training_plan():
 # the note is a string supplied by the user
 # the due_date is a string supplied by the user
 # the duration is a string supplied by the user
-# this method makes a new training and adds that training to the given plan. It returns the training_id : training_name
+# this method makes a new training and adds that training to the given plan. It returns a dictionary of the {training_id : training_name}
+# or it returns a dictionary of {"failure" : "failure"}
 @app.route('/manager/add_training_to_training_plan', methods=['POST'])
 def add_training_to_training_plan():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -675,30 +685,34 @@ def add_training_to_training_plan():
         return jsonify({'headers': header, 'msg': 'Missing duration'}), 400
 
     # make a new training
-    training_key = db.generate_key()
-    data = {
-        'name' : training_name,
-        'note' : note,
-        'due_date' : due_date,
-        'duration' : duration,
-        'complete' : 'false'
-    }
-    db.child('Trainings').child(training_key).set(data)
-    db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
-    db.child('Trainings').child(training_key).child('other_links').set(other_links)
+    try:
+        training_key = db.generate_key()
+        data = {
+            'name' : training_name,
+            'note' : note,
+            'due_date' : due_date,
+            'duration' : duration,
+            'complete' : 'false'
+        }
+        db.child('Trainings').child(training_key).set(data)
+        db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
+        db.child('Trainings').child(training_key).child('other_links').set(other_links)
 
-    # TODO might want to rewrite this to handle plans with no trainings in them
-    # TODO make robust once decide that
-    # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
-    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+        # TODO might want to rewrite this to handle plans with no trainings in them
+        # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
 
-    # set plan's training data by combining the trainings dict with a dict of the new training_id : training_name to be added
-    trainings.update({training_key : training_name})
-    db.child('Plans').child(plan_id).child('trainings').update(trainings)
+        # set plan's training data by combining the trainings dict with a dict of the new training_id : training_name to be added
+        trainings.update({training_key : training_name})
+        db.child('Plans').child(plan_id).child('trainings').update(trainings)
+
+        training = {training_key : training_name}
+    except:
+        training = {"failure" : "failure"}
 
     payload = {
         'headers' : header,
-        'training' : {training_key : training_name}
+        'training' : training
     }
 
     return jsonify(payload)
@@ -709,7 +723,7 @@ def add_training_to_training_plan():
 # the documentation links are a dictionary of link : name supplied by the user
 # the other links are a dictionary of link : name supplied by the user
 # manager_uuid and training_id are required. For the other fields, if there is nothing to be added, do not include them in the request.
-# this method APPENDS info to the relevant fields
+# this method APPENDS info to the relevant fields and returns either "success" or "failure"
 @app.route('/manager/add_info_to_training', methods=['POST'])
 def add_info_to_training():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -730,23 +744,27 @@ def add_info_to_training():
     if not training_id:
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
-    # TODO make robust
+    try:
     # since we can't append to database, need to get current list of things, then add to it
-    training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
+        training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
-    if documentation_links:
-        original_documentation_links = training['documentation_links'] # will be a dict of {link : name}
-        original_documentation_links.update(documentation_links) # combine the original dict with the new dict
-        db.child('Trainings').child(training_id).child('documentation_links').update(original_documentation_links)
+        if documentation_links:
+            original_documentation_links = training['documentation_links'] # will be a dict of {link : name}
+            original_documentation_links.update(documentation_links) # combine the original dict with the new dict
+            db.child('Trainings').child(training_id).child('documentation_links').update(original_documentation_links)
 
-    if other_links:
-        original_other_links = training['other_links'] # will be a dict of {link : name}
-        original_other_links.update(other_links) # combine the original dict with the new dict
-        db.child('Trainings').child(training_id).child('other_links').update(original_other_links)
+        if other_links:
+            original_other_links = training['other_links'] # will be a dict of {link : name}
+            original_other_links.update(other_links) # combine the original dict with the new dict
+            db.child('Trainings').child(training_id).child('other_links').update(original_other_links)
+
+        response = "success"
+    except:
+        response = "failure"
 
     payload = {
         'headers' : header,
-        'response' : "success"
+        'response' : response
     }
 
     return jsonify(payload)
@@ -761,6 +779,7 @@ def add_info_to_training():
 # manager_uuid and training_id are required. For the other fields, put an empty string in the fields that you don't want to overwrite
 # the authorization header should contain the user's verification token received from logging in
 # this method verifies the verification token to get the manager uuid, and OVERWRITES info in the relevant fields
+# It returns "success" or "failure"
 @app.route('/manager/update_training_info', methods=['POST'])
 def update_training_info():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -783,22 +802,26 @@ def update_training_info():
     if not training_id:
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
-    # TODO make robust
-    if training_name:
-        db.child('Trainings').child(training_id).child('name').update(training_name)
-    
-    if note:
-        db.child('Trainings').child(training_id).child('note').update(note)
+    try:
+        if training_name:
+            db.child('Trainings').child(training_id).child('name').update(training_name)
+        
+        if note:
+            db.child('Trainings').child(training_id).child('note').update(note)
 
-    if due_date:
-        db.child('Trainings').child(training_id).child('due_date').update(due_date)
+        if due_date:
+            db.child('Trainings').child(training_id).child('due_date').update(due_date)
 
-    if duration:
-        db.child('Trainings').child(training_id).child('duration').update(duration)
+        if duration:
+            db.child('Trainings').child(training_id).child('duration').update(duration)
+
+        response = "success"
+    except:
+        response = "failure"
 
     payload = {
         'headers' : header,
-        'response' : "success"
+        'response' : response
     }
 
     return jsonify(payload)
@@ -809,6 +832,7 @@ def update_training_info():
 # the training_id can be gotten from the endpoint /manager/add_training_to_training_plan, /manager/add_training_to_training_template, or /manager/get_trainee_training_plan_contents
 # this method uses the template_id and training_id to remove the training
 # from the template and delete it from the database (safe, since it can only be pointed to from the template)
+# Returns "success" or "failure"
 @app.route('/manager/remove_training_from_template', methods=['POST'])
 def remove_training_from_template():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -830,27 +854,35 @@ def remove_training_from_template():
     if not training_id:
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
-    #TODO make robust
-    # get the trainings currently in the template (will be a dict of training_id : training_name)
-    trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
-    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
-    trainings.pop(training_id, None)
-    # update the templates entry
-    db.child('Templates').child(template_id).update(trainings)
+    try:
+        # get the trainings currently in the template (will be a dict of training_id : training_name)
+        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+        # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+        trainings.pop(training_id, None)
+        # update the templates entry
+        db.child('Templates').child(template_id).update(trainings)
 
-    # remove the training entry in the Trainings table that corresponds to the training_id
-    db.child('Trainings').child(training_id).remove()
+        # remove the training entry in the Trainings table that corresponds to the training_id
+        db.child('Trainings').child(training_id).remove()
+
+        response = "success"
+    except:
+        response = "failure"
 
     payload = {
         'headers' : header,
-        'response' : "success"
+        'response' : response
     }
 
     return jsonify(payload)
 
-# expect the request to have the following fields: plan_id, training_id
-# this method verifies the verification token and uses the plan_id and training_id to remove the training
+# expect the request to have the following fields: manager_uuid, plan_id, training_id
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the plan id can be gotten from the endpoint /manager/get_trainee_training_plan_id
+# the training_id can be gotten from the endpoint /manager/add_training_to_training_plan, /manager/add_training_to_training_template, or /manager/get_trainee_training_plan_contents
+# this method uses the plan_id and training_id to remove the training
 # from the plan and delete it from the database (safe, since it can only be pointed to from the plan)
+# returns "success" or "failure"
 @app.route('/manager/remove_training_from_plan', methods=['POST'])
 def remove_training_from_plan():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -872,25 +904,218 @@ def remove_training_from_plan():
     if not training_id:
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
-    # TODO make robust
-    # get the trainings currently in the plan (will be a dict of training_id : training_name)
-    trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[training_id]
-    # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
-    trainings.pop(training_id, None)
-    # update the plan entry
-    db.child('Plans').child(training_id).update(trainings)
+    try:
+        # get the trainings currently in the plan (will be a dict of training_id : training_name)
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[training_id]
+        # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
+        trainings.pop(training_id, None)
+        # update the plan entry
+        db.child('Plans').child(training_id).update(trainings)
 
-    # remove the training entry in the Trainings table that corresponds to the training_id
-    db.child('Trainings').child(training_id).remove()
+        # remove the training entry in the Trainings table that corresponds to the training_id
+        db.child('Trainings').child(training_id).remove()
+
+        response = "success"
+    except:
+        response = "failure"
 
     payload = {
         'headers' : header,
-        'response' : "success"
+        'response' : response
     }
 
     return jsonify(payload)
 
 
+
+###
+"""
+Trainee Methods
+query methods - get plan_id (done), get task ids in plan (done), view specific task in plan or template (done), view meetings (done)
+update methods - mark task complete (done)
+"""
+###
+
+
+# expect the request to have the following fields: trainee_uuid
+# the authorization header should contain the user's verification token received from logging in
+# this method uses the trainee uuid to get and return the string of the trainee's plan_id
+@app.route('/trainee/get_trainee_plan_id', methods=['GET'])
+def trainee_get_plan_id():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    trainee_uuid = req.get('trainee_uuid')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+
+    try:
+        plan_id = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]['plan']
+    except:
+        plan_id = ""
+
+    payload = {
+        'headers': header,
+        'plan_id' : plan_id
+    }
+
+    return jsonify(payload)
+
+# expect request to have the following fields: trainee_uuid, plan_id
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# the plan_id field should contain the plan_id of the plan which should be retrieved. This value can be gotten from the /trainee/get_trainee_training_plan_id endpoint
+# this method uses the plan_id and queries the Plans database to get the dictionary of training_id : training_name from the plan (both from the templates associated with
+# the plan and trainings added directly to the plan). It returns a json of the dictionary of training_id : training_name.
+@app.route('/trainee/get_trainee_training_plan_contents', methods=['GET'])
+def trainee_get_trainee_training_plan_contents():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    trainee_uuid = req.get('trainee_uuid')
+    plan_id = req.get('plan_id')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+    if not plan_id:
+        return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
+
+    # get trainings added directly to the plan first (trainings will be a dict of training_id : training_name)
+    try:
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+    except:
+        trainings = {}
+
+    # now get trainings from the templates (templates will be a dict of template_id : template_name)
+    try:
+        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
+        for template_id in template_ids.keys():
+            # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
+            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
+            # merge the trainings from this template into the trainings dict
+            trainings.update(template_trainings)
+    except:
+        pass
+
+    payload = {
+        'headers' : header,
+        'trainings' : trainings
+    }
+    
+    return jsonify(payload)
+
+# expect the request to have the following fields: trainee_uuid, training_id
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# the training_id field should contain the training_id for which you want to get the training's contents. 
+# This value can be gotten from the /trainee/get_trainee_training_plan_contents endpoint.
+# this method uses the training_id to query the Trainings database to get the training contents. It returns the training
+# contents as a json.
+@app.route('/trainee/get_training', methods=['GET'])
+def trainee_get_training():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    trainee_uuid = req.get('trainee_uuid')
+    training_id = req.get('training_id')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    try:
+        training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
+    except:
+        training = {}
+
+    payload = {
+        'headers' : header,
+        'trainings' : training
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: trainee_uuid
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# this method uses trainee uuid to query the Trainees database to get the list of meetings then returns the list of meetings
+@app.route('/trainee/get_trainee_meetings', methods=['GET'])
+def get_trainee_meetings():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    trainee_uuid = req.get('trainee_uuid')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+
+    try:
+        meetings = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['meetings']
+    except:
+        meetings = {}
+
+    payload = {
+        'headers' : header,
+        'meetings' : meetings
+    }
+
+    return jsonify(payload)
+
+# expect request to have the following header: authorization
+# expect the request to have the following fields: trainee_uuid, training_id
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# the training_id field should contain the training_id that you want to mark complete. It can be gotten from the /trainee/get_trainee_training_plan_contents endpoint
+# this method uses the training_id to mark the given training as complete
+# returns "success" or "failure"
+@app.route('/trainee/mark_task_complete', methods=['POST'])
+def mark_task_complete():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    trainee_uuid = req.get('trainee_uuid')
+    training_id = req.get('training_id')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+    if not training_id:
+        return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
+
+    try:
+        db.child('Trainings').child(training_id).update({'complete' : 'true'})
+        response = "success"
+    except:
+        response = "failure"
+
+    payload = {
+        'headers' : header,
+        'response' : response
+    }
+
+    return jsonify(payload)
 
 
 if __name__ == '__main__':
