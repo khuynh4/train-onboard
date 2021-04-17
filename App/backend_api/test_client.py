@@ -39,15 +39,16 @@ print(r)
 """
 
 # login and test authentication of verification token
-"""
-url = 'http://localhost:8080/authentication/login'
+
+url = 'http://localhost:5000/api/login'
 params = {
-    'email' : 'luoma@colorado.edu',
+    'email' : 'luoma.jake@gmail.com',
     'password' : 'password'
 }
-r = requests.post(url, data=params)
+data = json.dumps(params)
+r = requests.post(url, data=data)
 print(r.text)
-
+"""
 url = 'http://localhost:8080/authentication/test'
 params = {
     'authorization' : r.text
@@ -140,8 +141,10 @@ print(r.text)
 """
 
 # test manager getting templates
+"""
 url = 'http://localhost:5000/manager/get_training_templates'
 params = {'manager_uuid' : 'NYFVp8qdnPhUX3Q4pzJ1LMbwvWh1'}
 data = json.dumps(params)
 r = requests.get(url, data=data)
 print(r.text)
+"""

@@ -109,6 +109,16 @@ def login():
     user_uuid = list(user_data.keys())[0]
     name = user_data[user_uuid]['name']
 
+    try:
+        db.child('Managers').order_by_key().equal_to(user_uuid).get().val()[user_uuid]
+        designation = "manager"
+    except:
+        try:
+            db.child('Trainees').order_by_key().equal_to(user_uuid).get().val()[user_uuid]
+            designation = "trainee"
+        except:
+            designation = "unassigned"
+
     session['uuid'] = user_uuid
     session['name'] = name
     session['refresh_token'] = user['refreshToken']
@@ -119,6 +129,7 @@ def login():
         'uuid': user_uuid,
         'name': name,
         'email': email,
+        'designation' : designation,
         'isLoggedIn': True
     }
 
