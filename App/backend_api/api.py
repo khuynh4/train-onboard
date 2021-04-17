@@ -241,10 +241,10 @@ remove methods - remove task from specific employee plan or specific template (w
 
 # expect request to have the following fields: manager_uuid
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
-# this method uses the manager_uuid and queries the database to get a dictionary of trainee_uuid/name pairs of the manager's trainees
-# and returns a json of the dictionary of {trainee_uuid : name} pairs
+# this method uses the manager_uuid and queries the database to get a dictionary of trainee_name : trainee_uuid pairs of the manager's trainees
+# and returns a json of the dictionary of {trainee_name : trainee_uuid} pairs
 @app.route('/manager/get_trainees', methods=['GET'])
-def get_trainees():
+def manager_get_trainees():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
@@ -457,9 +457,7 @@ def manager_get_training():
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the template_name is supplied by the client
 # this method adds a new empty template to the manager and returns a dictionary of the newly created template_id : template_name
-# TODO possibly rewrite how the empty template is added to the Templates database so it doesn't have an entry at all.
-# Would require rewriting the methods that modify templates to check for that and make a new entry if it doesn't exist. Probably
-# better than how it is now, where there's just a dummy training ID for each template.
+# NOTE: when a new template is made, it has no trainings associated with it and no Trainings field
 @app.route('/manager/new_empty_template', methods=['POST'])
 def new_empty_template():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -480,7 +478,10 @@ def new_empty_template():
 
     template_id = db.generate_key()
 
-    data = {"no_training_id" : "no_training_name"}
+    data = {
+        "manager" : manager_uuid,
+        "template_name" : template_name
+    }
 
     # make new empty template in Templates database
     db.child('Templates').child(template_id).set(data)
@@ -571,7 +572,7 @@ def add_training_to_training_template():
         # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
         # try except to handle case where template has no trainings in it to start
         try:
-            trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+            trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]["Trainings"]
         except:
             trainings = {}
 
@@ -579,9 +580,9 @@ def add_training_to_training_template():
         trainings.update({training_key : training_name})
 
         try:
-            db.child('Templates').child(template_id).update(trainings)
+            db.child('Templates').child(template_id).child("Trainings").update(trainings)
         except:
-            db.child('Templates').child(template_id).set(trainings)
+            db.child('Templates').child(template_id).child("Trainings").set(trainings)
 
         training = {training_key : training_name}
     except:
@@ -626,11 +627,19 @@ def add_template_to_training_plan():
 
     try:
         # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
-        templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['Templates']
+        # try except to handle the case where the plan doesn't have any Templates field yet
+        try:
+            templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['Templates']
+        except:
+            templates = {}
 
         # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
         templates.update({template_id : template_name})
-        db.child('Plans').child(plan_id).child('Templates').update(templates)
+
+        try:
+            db.child('Plans').child(plan_id).child('Templates').update(templates)
+        except:
+            db.child('Plans').child(plan_id).child('Templates').set(templates)
 
         response = "success"
     except:
@@ -736,7 +745,7 @@ def add_training_to_training_plan():
 # the documentation links are a dictionary of link : name supplied by the user
 # the other links are a dictionary of link : name supplied by the user
 # manager_uuid and training_id are required. For the other fields, if there is nothing to be added, do not include them in the request.
-# this method APPENDS info to the relevant fields and returns either "success" or "failure"
+# NOTE: this method APPENDS info to the relevant fields and returns either "success" or "failure"
 @app.route('/manager/add_info_to_training', methods=['POST'])
 def add_info_to_training():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -790,9 +799,7 @@ def add_info_to_training():
 # due_date is a string supplied by the user
 # duration is a string supplied by the user
 # manager_uuid and training_id are required. For the other fields, put an empty string in the fields that you don't want to overwrite
-# the authorization header should contain the user's verification token received from logging in
-# this method verifies the verification token to get the manager uuid, and OVERWRITES info in the relevant fields
-# It returns "success" or "failure"
+# NOTE: this method OVERWRITES info in the relevant fields and returns "success" or "failure"
 @app.route('/manager/update_training_info', methods=['POST'])
 def update_training_info():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -939,6 +946,36 @@ def remove_training_from_plan():
 
     return jsonify(payload)
 
+# expect the request to have the following fields: manager_uuid
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# this method uses manager uuid to query the managers database to get the list of events then returns the list of events
+@app.route('/manager/get_manager_events', methods=['GET'])
+def get_manager_events():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    manager_uuid = req.get('manager_uuid')
+
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+
+    try:
+        events = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['Events']
+    except:
+        events = {}
+
+    payload = {
+        'headers' : header,
+        'events' : events
+    }
+
+    return jsonify(payload)
+
 
 
 ###
@@ -948,6 +985,68 @@ query methods - get plan_id (done), get task ids in plan (done), view specific t
 update methods - mark task complete (done)
 """
 ###
+
+# expect request to have the following fields: trainee_uuid
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# this method uses the trainee_uuid and queries the database to get a dictionary of trainee_name : trainee_uuid pairs of the trainee's peers
+# and returns a json of the dictionary of {trainee_name : trainee_uuid} pairs
+@app.route('/trainee/get_peers', methods=['GET'])
+def trainee_get_trainees():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    trainee_uuid = req.get('trainee_uuid')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+
+    try:
+        peers = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]["Team"]
+    except:
+        peers = {}
+
+    payload = {
+        'headers': header,
+        'peers' : peers
+    }
+
+    return jsonify(payload), 200
+
+# expect request to have the following fields: trainee_uuid
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# this method uses the trainee_uuid and queries the database to get a dictionary of trainee_uuid/name pairs of the trainee's trainees
+# and returns a json of the dictionary of {manager_name : manager_uuid} pairs
+@app.route('/trainee/get_managers', methods=['GET'])
+def trainee_get_managers():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+    
+    trainee_uuid = req.get('trainee_uuid')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+
+    try:
+        managers = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]["Managers"]
+    except:
+        managers = {}
+
+    payload = {
+        'headers': header,
+        'managers' : managers
+    }
+
+    return jsonify(payload), 200
 
 
 # expect the request to have the following fields: trainee_uuid
@@ -1129,6 +1228,160 @@ def mark_task_complete():
     }
 
     return jsonify(payload)
+
+
+
+###
+"""
+Shared Methods
+add methods - add new event (done)
+"""
+###
+
+
+# expect the request to have the following fields: manager_uuid, trainee_uuid
+# the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
+# the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# the start, end, and event_type fields are strings provided by the user
+# The manager can get their trainees' uuids and names through the endpoint /manager/get_trainees
+# The trainee can get their managers' uuids and names through the endpoint /trainee/get_managers
+# this method uses trainee uuid and manager uuid to add an event to both the trainee and manager's lists of events.
+# It returns "success" or "failure"
+@app.route('/shared/add_event_between_manager_and_trainee', methods=['POST'])
+def add_event_between_manager_and_trainee():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    trainee_uuid = req.get('trainee_uuid')
+    trainee_name = req.get('trainee_name')
+    manager_uuid = req.get('manager_uuid')
+    manager_name = req.get('manager_name')
+    start = req.get('start')
+    end = req.get('end')
+    event_type = req.get('event_type')
+
+    if not trainee_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
+    if not trainee_name:
+        return jsonify({'headers': header, 'msg': 'Missing trainee name'}), 400
+    if not manager_uuid:
+        return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
+    if not manager_name:
+        return jsonify({'headers': header, 'msg': 'Missing manager name'}), 400
+    if not start:
+        return jsonify({'headers': header, 'msg': 'Missing start timestamp'}), 400
+    if not end:
+        return jsonify({'headers': header, 'msg': 'Missing end timestamp'}), 400
+    if not event_type:
+        return jsonify({'headers': header, 'msg': 'Missing event type'}), 400
+    
+    try:
+        event_key = db.generate_key()
+
+        # make a new manager event
+        manager_event_data = {
+            'start' : start,
+            'end' : end,
+            'event_type' : event_type,
+            'with' : trainee_name,
+        }
+        db.child('Managers').child(manager_uuid).child("Events").child(event_key).set(manager_event_data)
+
+        # make a new trainee event
+        trainee_event_data = {
+            'start' : start,
+            'end' : end,
+            'event_type' : event_type,
+            'with' : manager_name,
+        }
+        db.child('Trainees').child(trainee_uuid).child("Events").child(event_key).set(trainee_event_data)
+
+        result = "success"
+    except:
+        result = "failure"
+
+    payload = {
+        'headers' : header,
+        'result' : result
+    }
+
+    return jsonify(payload)
+
+# expect the request to have the following fields: trainee_uuid1, trainee_uuid2
+# the trainee_uuid1 field should contain the trainee's unique id which was provided to the client upon the trainee logging in
+# The trainee can get their peers' uuids through the endpoint /trainee/get_team
+# this method uses trainee_uuid1 and trainee_uuid2 to add an event to both the trainee and their peer's lists of events.
+# It returns "success" or "failure"
+@app.route('/shared/add_event_between_trainee_and_trainee', methods=['POST'])
+def add_event_between_trainee_and_trainee():
+    header = {'Access-Control-Allow-Origin': '*'}
+    
+    #receive data from front end
+    try:
+        req = request.get_json(force=True)
+    except:
+        return jsonify({'headers': header, 'msg': 'Missing JSON'}), 400
+
+    trainee_uuid1 = req.get('trainee_uuid1')
+    trainee_name1 = req.get('trainee_name1')
+    trainee_uuid2 = req.get('trainee_uuid2')
+    trainee_name2 = req.get('trainee_name2')
+    start = req.get('start')
+    end = req.get('end')
+    event_type = req.get('event_type')
+
+    if not trainee_uuid1:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid 1'}), 400
+    if not trainee_name1:
+        return jsonify({'headers': header, 'msg': 'Missing trainee name 1'}), 400
+    if not trainee_uuid2:
+        return jsonify({'headers': header, 'msg': 'Missing trainee uuid 2'}), 400
+    if not trainee_name2:
+        return jsonify({'headers': header, 'msg': 'Missing trainee name 2'}), 400
+    if not start:
+        return jsonify({'headers': header, 'msg': 'Missing start timestamp'}), 400
+    if not end:
+        return jsonify({'headers': header, 'msg': 'Missing end timestamp'}), 400
+    if not event_type:
+        return jsonify({'headers': header, 'msg': 'Missing event type'}), 400
+    
+    try:
+        event_key = db.generate_key()
+
+        # make a new event for trainee 1
+        trainee_event_data1 = {
+            'start' : start,
+            'end' : end,
+            'event_type' : event_type,
+            'with' : trainee_name2,
+        }
+        db.child('Trainees').child(trainee_uuid1).child("Events").child(event_key).set(trainee_event_data1)
+
+        # make a new event for trainee 1
+        trainee_event_data2 = {
+            'start' : start,
+            'end' : end,
+            'event_type' : event_type,
+            'with' : trainee_name1,
+        }
+        db.child('Trainees').child(trainee_uuid2).child("Events").child(event_key).set(trainee_event_data2)
+
+        result = "success"
+    except:
+        result = "failure"
+
+    payload = {
+        'headers' : header,
+        'result' : result
+    }
+
+    return jsonify(payload)
+
 
 
 if __name__ == '__main__':
