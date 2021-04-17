@@ -258,7 +258,6 @@ def get_trainees():
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
 
-    # TODO rename "Trainees" to trainees OR make all keys capitalized in databases
     try:
         trainees = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]["Trainees"]
     except:
@@ -330,16 +329,16 @@ def manager_get_trainee_training_plan_contents():
 
     # get trainings added directly to the plan first (trainings will be a dict of training_id : training_name)
     try:
-        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['Trainings']
     except:
         trainings = {}
 
     # now get trainings from the templates (templates will be a dict of template_id : template_name)
     try:
-        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
+        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['Templates']
         for template_id in template_ids.keys():
             # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
-            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
+            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['Trainings']
             # merge the trainings from this template into the trainings dict
             trainings.update(template_trainings)
     except:
@@ -372,7 +371,7 @@ def get_training_templates():
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
 
     try:
-        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['templates']
+        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['Templates']
     except:
         templates = {}
 
@@ -387,7 +386,7 @@ def get_training_templates():
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the template_id should contain the template_id for the template the manager wants to retrieve. This value can be gotten from the /manager/get_training_templates endpoint
 # this method uses the template_id to query the Templates database to get a dictionary of training_id : training_name. The method
-# returns a json of the dictionary of training_id : training_name pairs.
+# returns a json of the dictionary of template's manager, the template name, and the template's training_id : training_name pairs.
 @app.route('/manager/get_training_template', methods=['GET'])
 def get_training_template():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -489,7 +488,7 @@ def new_empty_template():
     # add template reference to manager
     # since we can't append to database, get the template info from the manager (will be a dict of template_id : template_name)
     try:
-        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['templates']
+        templates = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['Templates']
     except:
         templates = {}
 
@@ -497,9 +496,9 @@ def new_empty_template():
 
     # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
     try:
-        db.child('Managers').child(manager_uuid).child('templates').update(templates)
+        db.child('Managers').child(manager_uuid).child('Templates').update(templates)
     except: # the Manager doesn't currently have any templates so it needs to bet set for the first time
-        db.child('Managers').child(manager_uuid).child('templates').set(templates)
+        db.child('Managers').child(manager_uuid).child('Templates').set(templates)
 
     payload = {
         'headers' : header,
@@ -566,16 +565,23 @@ def add_training_to_training_template():
             'complete' : 'false'
         }
         db.child('Trainings').child(training_key).set(data)
-        db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
-        db.child('Trainings').child(training_key).child('other_links').set(other_links)
+        db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
+        db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
 
-        # TODO might want to rewrite this to handle templates with no trainings in them
         # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
-        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+        # try except to handle case where template has no trainings in it to start
+        try:
+            trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+        except:
+            trainings = {}
 
         # set template data by combining the templates dict with a dict of the new training_id : training name to be added
         trainings.update({training_key : training_name})
-        db.child('Templates').child(template_id).update(trainings)
+
+        try:
+            db.child('Templates').child(template_id).update(trainings)
+        except:
+            db.child('Templates').child(template_id).set(trainings)
 
         training = {training_key : training_name}
     except:
@@ -620,11 +626,11 @@ def add_template_to_training_plan():
 
     try:
         # since we can't append to database, get the template info currently in the plan (will be a dict of template_id : template_name)
-        templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['templates']
+        templates = db.child('Plans').order_by_key().equal_to(plan_id).get().val()['Templates']
 
         # set plan's template data by combining the templates dict with a dict of the new template_id : template_name to be added
         templates.update({template_id : template_name})
-        db.child('Plans').child(plan_id).child('templates').update(templates)
+        db.child('Plans').child(plan_id).child('Templates').update(templates)
 
         response = "success"
     except:
@@ -695,16 +701,23 @@ def add_training_to_training_plan():
             'complete' : 'false'
         }
         db.child('Trainings').child(training_key).set(data)
-        db.child('Trainings').child(training_key).child('documentation_links').set(documentation_links)
-        db.child('Trainings').child(training_key).child('other_links').set(other_links)
+        db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
+        db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
 
-        # TODO might want to rewrite this to handle plans with no trainings in them
         # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
-        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+        # try except in case plan has no trainings in it yet
+        try:
+            trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['Trainings']
+        except:
+            trainings = {}
 
         # set plan's training data by combining the trainings dict with a dict of the new training_id : training_name to be added
         trainings.update({training_key : training_name})
-        db.child('Plans').child(plan_id).child('trainings').update(trainings)
+
+        try:
+            db.child('Plans').child(plan_id).child('Trainings').update(trainings)
+        except:
+            db.child('Plans').child(plan_id).child('Trainings').set(trainings)
 
         training = {training_key : training_name}
     except:
@@ -749,14 +762,14 @@ def add_info_to_training():
         training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
         if documentation_links:
-            original_documentation_links = training['documentation_links'] # will be a dict of {link : name}
+            original_documentation_links = training['Documentation_Links'] # will be a dict of {link : name}
             original_documentation_links.update(documentation_links) # combine the original dict with the new dict
-            db.child('Trainings').child(training_id).child('documentation_links').update(original_documentation_links)
+            db.child('Trainings').child(training_id).child('Documentation_Links').update(original_documentation_links)
 
         if other_links:
-            original_other_links = training['other_links'] # will be a dict of {link : name}
+            original_other_links = training['Other_Links'] # will be a dict of {link : name}
             original_other_links.update(other_links) # combine the original dict with the new dict
-            db.child('Trainings').child(training_id).child('other_links').update(original_other_links)
+            db.child('Trainings').child(training_id).child('Other_Links').update(original_other_links)
 
         response = "success"
     except:
@@ -931,7 +944,7 @@ def remove_training_from_plan():
 ###
 """
 Trainee Methods
-query methods - get plan_id (done), get task ids in plan (done), view specific task in plan or template (done), view meetings (done)
+query methods - get plan_id (done), get task ids in plan (done), view specific task in plan or template (done), view events (done)
 update methods - mark task complete (done)
 """
 ###
@@ -992,16 +1005,16 @@ def trainee_get_trainee_training_plan_contents():
 
     # get trainings added directly to the plan first (trainings will be a dict of training_id : training_name)
     try:
-        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['trainings']
+        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['Trainings']
     except:
         trainings = {}
 
     # now get trainings from the templates (templates will be a dict of template_id : template_name)
     try:
-        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['templates']
+        template_ids = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[plan_id]['Templates']
         for template_id in template_ids.keys():
             # index into the templates table using the template_id and get the trainings (template_trainings will be a dict of training_id : training_name)
-            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['trainings']
+            template_trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]['Trainings']
             # merge the trainings from this template into the trainings dict
             trainings.update(template_trainings)
     except:
@@ -1052,9 +1065,9 @@ def trainee_get_training():
 
 # expect the request to have the following fields: trainee_uuid
 # the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
-# this method uses trainee uuid to query the Trainees database to get the list of meetings then returns the list of meetings
-@app.route('/trainee/get_trainee_meetings', methods=['GET'])
-def get_trainee_meetings():
+# this method uses trainee uuid to query the Trainees database to get the list of events then returns the list of events
+@app.route('/trainee/get_trainee_events', methods=['GET'])
+def get_trainee_events():
     header = {'Access-Control-Allow-Origin': '*'}
     
     #receive data from front end
@@ -1069,13 +1082,13 @@ def get_trainee_meetings():
         return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
 
     try:
-        meetings = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['meetings']
+        events = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['Events']
     except:
-        meetings = {}
+        events = {}
 
     payload = {
         'headers' : header,
-        'meetings' : meetings
+        'events' : events
     }
 
     return jsonify(payload)
