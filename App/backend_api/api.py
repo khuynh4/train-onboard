@@ -230,7 +230,7 @@ def logout():
     #return route for index and make logged in false
     payload = {
         'header': {'Access-Control-Allow-Origin': '*'},
-        'url': url_for('/index'),
+        'url': url_for('.index'),
         'isLoggedIn': False
     }
 
@@ -417,13 +417,13 @@ def get_training_template():
         return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
 
     try:
-        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
+        template = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
     except:
-        trainings = {}
+        template = {}
 
     payload = {
         'headers' : header,
-        'trainings' : trainings
+        'template' : template
     }
 
     return jsonify(payload)
@@ -459,7 +459,7 @@ def manager_get_training():
 
     payload = {
         'headers' : header,
-        'trainings' : training
+        'training' : training
     }
 
     return jsonify(payload)
@@ -481,17 +481,21 @@ def new_empty_template():
     
     manager_uuid = req.get('manager_uuid')
     template_name = req.get('template_name')
+    description = req.get('description')
 
     if not manager_uuid:
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
     if not template_name:
         return jsonify({'headers': header, 'msg': 'Missing template name'}), 400
+    if not description:
+        return jsonify({'headers': header, 'msg': 'Missing description'}), 400
 
     template_id = db.generate_key()
 
     data = {
         "manager" : manager_uuid,
-        "template_name" : template_name
+        "template_name" : template_name,
+        'description' : description
     }
 
     # make new empty template in Templates database
@@ -555,10 +559,6 @@ def add_training_to_training_template():
         return jsonify({'headers': header, 'msg': 'Missing template id'}), 400
     if not training_name:
         return jsonify({'headers': header, 'msg': 'Missing training name'}), 400
-    if not documentation_links:
-        return jsonify({'headers': header, 'msg': 'Missing documentation links'}), 400
-    if not other_links:
-        return jsonify({'headers': header, 'msg': 'Missing other links'}), 400
     if not note:
         return jsonify({'headers': header, 'msg': 'Missing note'}), 400
     if not due_date:
@@ -577,8 +577,10 @@ def add_training_to_training_template():
             'complete' : 'false'
         }
         db.child('Trainings').child(training_key).set(data)
-        db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
-        db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
+        if documentation_links:
+            db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
+        if other_links:
+            db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
 
         # since we can't append to database, get the trainings currently in the template (will be a dict of training_id : training_name)
         # try except to handle case where template has no trainings in it to start
@@ -699,10 +701,6 @@ def add_training_to_training_plan():
         return jsonify({'headers': header, 'msg': 'Missing plan id'}), 400
     if not training_name:
         return jsonify({'headers': header, 'msg': 'Missing training name'}), 400
-    if not documentation_links:
-        return jsonify({'headers': header, 'msg': 'Missing documentation links'}), 400
-    if not other_links:
-        return jsonify({'headers': header, 'msg': 'Missing other links'}), 400
     if not note:
         return jsonify({'headers': header, 'msg': 'Missing note'}), 400
     if not due_date:
@@ -721,8 +719,10 @@ def add_training_to_training_plan():
             'complete' : 'false'
         }
         db.child('Trainings').child(training_key).set(data)
-        db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
-        db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
+        if documentation_links:
+            db.child('Trainings').child(training_key).child('Documentation_Links').set(documentation_links)
+        if other_links:
+            db.child('Trainings').child(training_key).child('Other_Links').set(other_links)
 
         # since we can't append to database, get the trainings currently in the plan (will be a dict of training_id : training_name)
         # try except in case plan has no trainings in it yet
@@ -782,12 +782,18 @@ def add_info_to_training():
         training = db.child('Trainings').order_by_key().equal_to(training_id).get().val()[training_id]
 
         if documentation_links:
-            original_documentation_links = training['Documentation_Links'] # will be a dict of {link : name}
+            try:
+                original_documentation_links = training['Documentation_Links'] # will be a dict of {link : name}
+            except:
+                original_documentation_links = {}
             original_documentation_links.update(documentation_links) # combine the original dict with the new dict
             db.child('Trainings').child(training_id).child('Documentation_Links').update(original_documentation_links)
 
         if other_links:
-            original_other_links = training['Other_Links'] # will be a dict of {link : name}
+            try:
+                original_other_links = training['Other_Links'] # will be a dict of {link : name}
+            except:
+                original_other_links = {}
             original_other_links.update(other_links) # combine the original dict with the new dict
             db.child('Trainings').child(training_id).child('Other_Links').update(original_other_links)
 
@@ -811,6 +817,7 @@ def add_info_to_training():
 # duration is a string supplied by the user
 # manager_uuid and training_id are required. For the other fields, put an empty string in the fields that you don't want to overwrite
 # NOTE: this method OVERWRITES info in the relevant fields and returns "success" or "failure"
+# TODO: existing bug - if you change the training name, it'll be changed in the Trainings table but not the Plans table. Would require plan_id to also train in Plans table.
 @app.route('/manager/update_training_info', methods=['POST'])
 def update_training_info():
     header = {'Access-Control-Allow-Origin': '*'}
@@ -835,16 +842,16 @@ def update_training_info():
 
     try:
         if training_name:
-            db.child('Trainings').child(training_id).child('name').update(training_name)
+            db.child('Trainings').child(training_id).update({'name' : training_name})
         
         if note:
-            db.child('Trainings').child(training_id).child('note').update(note)
+            db.child('Trainings').child(training_id).update({'note' : note})
 
         if due_date:
-            db.child('Trainings').child(training_id).child('due_date').update(due_date)
+            db.child('Trainings').child(training_id).update({'due_date' : due_date})
 
         if duration:
-            db.child('Trainings').child(training_id).child('duration').update(duration)
+            db.child('Trainings').child(training_id).update({'duration' : duration})
 
         response = "success"
     except:
@@ -886,12 +893,8 @@ def remove_training_from_template():
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
     try:
-        # get the trainings currently in the template (will be a dict of training_id : training_name)
-        trainings = db.child('Templates').order_by_key().equal_to(template_id).get().val()[template_id]
-        # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
-        trainings.pop(training_id, None)
-        # update the templates entry
-        db.child('Templates').child(template_id).update(trainings)
+        # remove the training entry from the Templates table
+        db.child('Templates').child(template_id).child('Trainings').child(training_id).remove()
 
         # remove the training entry in the Trainings table that corresponds to the training_id
         db.child('Trainings').child(training_id).remove()
@@ -936,12 +939,8 @@ def remove_training_from_plan():
         return jsonify({'headers': header, 'msg': 'Missing training id'}), 400
 
     try:
-        # get the trainings currently in the plan (will be a dict of training_id : training_name)
-        trainings = db.child('Plans').order_by_key().equal_to(plan_id).get().val()[training_id]
-        # remove the training entry from the dict - using pop() so it won't crash if the key isn't present
-        trainings.pop(training_id, None)
-        # update the plan entry
-        db.child('Plans').child(training_id).update(trainings)
+        # remove the training entry from the Plans table
+        db.child('Plans').child(plan_id).child('Trainings').child(training_id).remove()
 
         # remove the training entry in the Trainings table that corresponds to the training_id
         db.child('Trainings').child(training_id).remove()
@@ -976,7 +975,7 @@ def get_manager_events():
         return jsonify({'headers': header, 'msg': 'Missing manager uuid'}), 400
 
     try:
-        events = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()['Events']
+        events = db.child('Managers').order_by_key().equal_to(manager_uuid).get().val()[manager_uuid]['Events']
     except:
         events = {}
 
@@ -1253,7 +1252,7 @@ add methods - add new event (done)
 # expect the request to have the following fields: manager_uuid, trainee_uuid
 # the manager_uuid field should contain the manager's unique id which was provided to the client upon the manager logging in
 # the trainee_uuid field should contain the trainee's unique id which was provided to the client upon the trainee logging in
-# the start, end, and event_type fields are strings provided by the user
+# the start, end, and text fields are strings provided by the user
 # The manager can get their trainees' uuids and names through the endpoint /manager/get_trainees
 # The trainee can get their managers' uuids and names through the endpoint /trainee/get_managers
 # this method uses trainee uuid and manager uuid to add an event to both the trainee and manager's lists of events.
@@ -1274,7 +1273,7 @@ def add_event_between_manager_and_trainee():
     manager_name = req.get('manager_name')
     start = req.get('start')
     end = req.get('end')
-    event_type = req.get('event_type')
+    text = req.get('text')
 
     if not trainee_uuid:
         return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
@@ -1288,8 +1287,8 @@ def add_event_between_manager_and_trainee():
         return jsonify({'headers': header, 'msg': 'Missing start timestamp'}), 400
     if not end:
         return jsonify({'headers': header, 'msg': 'Missing end timestamp'}), 400
-    if not event_type:
-        return jsonify({'headers': header, 'msg': 'Missing event type'}), 400
+    if not text:
+        return jsonify({'headers': header, 'msg': 'Missing event text'}), 400
     
     try:
         event_key = db.generate_key()
@@ -1298,7 +1297,7 @@ def add_event_between_manager_and_trainee():
         manager_event_data = {
             'start' : start,
             'end' : end,
-            'event_type' : event_type,
+            'text' : text,
             'with' : trainee_name,
         }
         db.child('Managers').child(manager_uuid).child("Events").child(event_key).set(manager_event_data)
@@ -1307,7 +1306,7 @@ def add_event_between_manager_and_trainee():
         trainee_event_data = {
             'start' : start,
             'end' : end,
-            'event_type' : event_type,
+            'text' : text,
             'with' : manager_name,
         }
         db.child('Trainees').child(trainee_uuid).child("Events").child(event_key).set(trainee_event_data)
@@ -1344,7 +1343,7 @@ def add_event_between_trainee_and_trainee():
     trainee_name2 = req.get('trainee_name2')
     start = req.get('start')
     end = req.get('end')
-    event_type = req.get('event_type')
+    text = req.get('text')
 
     if not trainee_uuid1:
         return jsonify({'headers': header, 'msg': 'Missing trainee uuid 1'}), 400
@@ -1358,8 +1357,8 @@ def add_event_between_trainee_and_trainee():
         return jsonify({'headers': header, 'msg': 'Missing start timestamp'}), 400
     if not end:
         return jsonify({'headers': header, 'msg': 'Missing end timestamp'}), 400
-    if not event_type:
-        return jsonify({'headers': header, 'msg': 'Missing event type'}), 400
+    if not text:
+        return jsonify({'headers': header, 'msg': 'Missing event text'}), 400
     
     try:
         event_key = db.generate_key()
@@ -1368,7 +1367,7 @@ def add_event_between_trainee_and_trainee():
         trainee_event_data1 = {
             'start' : start,
             'end' : end,
-            'event_type' : event_type,
+            'text' : text,
             'with' : trainee_name2,
         }
         db.child('Trainees').child(trainee_uuid1).child("Events").child(event_key).set(trainee_event_data1)
@@ -1377,7 +1376,7 @@ def add_event_between_trainee_and_trainee():
         trainee_event_data2 = {
             'start' : start,
             'end' : end,
-            'event_type' : event_type,
+            'text' : text,
             'with' : trainee_name1,
         }
         db.child('Trainees').child(trainee_uuid2).child("Events").child(event_key).set(trainee_event_data2)
