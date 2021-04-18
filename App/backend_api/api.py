@@ -1191,7 +1191,7 @@ def get_trainee_events():
         return jsonify({'headers': header, 'msg': 'Missing trainee uuid'}), 400
 
     try:
-        events = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()['Events']
+        events = db.child('Trainees').order_by_key().equal_to(trainee_uuid).get().val()[trainee_uuid]['Events']
     except:
         events = {}
 
