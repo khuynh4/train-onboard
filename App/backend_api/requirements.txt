@@ -1,6 +1,0 @@
-flask
-flask_cors
-google-auth
-pyrebase
-requests==2.11.1
-requests-toolbelt==0.7.0
