@@ -35,6 +35,18 @@ app.secret_key = 'ejIk28Ik3hhUUEik620ssnYYe78bbneYQ092'
 app.permanent_session_lifetime = timedelta(days=5)
 cors = CORS(app, resources={r"/*": {"origins": "*"}})
 
+
+# health check required for deployment to services like GAE, which occasionally query '/' endpoint to check if server is alive
+@app.route('/', methods=['GET', 'POST'])
+def health_check():
+    payload = {
+        'headers': {'Access-Control-Allow-Origin': '*'},
+        'alive' : 'alive'
+    }
+
+    return jsonify(payload), 200
+
+
 @app.route('/index', methods=['GET'])
 def index():
     
