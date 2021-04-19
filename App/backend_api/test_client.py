@@ -278,3 +278,129 @@ data = json.dumps(params)
 r = requests.get(url, data=data)
 print(r.text)
 """
+
+###
+"""
+Trainee Tests
+"""
+###
+
+# test trainee getting the uuids of their peers
+"""
+url = 'http://localhost:5000/trainee/get_peers'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee getting the uuids of their managers
+"""
+url = 'http://localhost:5000/trainee/get_managers'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee getting their plan id
+"""
+url = 'http://localhost:5000/trainee/get_trainee_plan_id'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee getting their plan contents (pairs of training_id : training_name)
+"""
+url = 'http://localhost:5000/trainee/get_trainee_training_plan_contents'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs',
+    'plan_id' : '-MX9H6qe2jf9NPyh-SWV'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee getting the contents of a specific training
+"""
+url = 'http://localhost:5000/trainee/get_training'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs',
+    'training_id' : 'training_id'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee getting their events
+"""
+url = 'http://localhost:5000/trainee/get_trainee_events'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs'
+    }
+data = json.dumps(params)
+r = requests.get(url, data=data)
+print(r.text)
+"""
+
+# test trainee marking one of their trainings complete
+"""
+url = 'http://localhost:5000/trainee/mark_task_complete'
+params = {
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs',
+    'training_id' : 'training_id'
+    }
+data = json.dumps(params)
+r = requests.post(url, data=data)
+print(r.text)
+"""
+
+###
+"""
+Shared Method Tests
+"""
+###
+
+# test adding an event between a manager and a trainee
+"""
+url = 'http://localhost:5000/shared/add_event_between_manager_and_trainee'
+params = {
+    'manager_uuid' : '-MXmPqXDWN0PGufepgZC',
+    'manager_name' : 'Jake Luoma',
+    'trainee_uuid' : '-MXSr7gxFkFupIMfnkXs',
+    'trainee_name' : 'Warren Fulton',
+    'start' : 'start datetime',
+    'end' : 'end datetime',
+    'text' : 'text note'
+    }
+data = json.dumps(params)
+r = requests.post(url, data=data)
+print(r.text)
+"""
+
+# test adding an event between two trainees
+"""
+url = 'http://localhost:5000/shared/add_event_between_trainee_and_trainee'
+params = {
+    'trainee_uuid1' : '-MYG8kHNEhUsI0JoXhnN',
+    'trainee_name1' : 'Andrea Chomorro',
+    'trainee_uuid2' : '-MXSr7gxFkFupIMfnkXs',
+    'trainee_name2' : 'Warren Fulton',
+    'start' : 'start datetime',
+    'end' : 'end datetime',
+    'text' : 'text note'
+    }
+data = json.dumps(params)
+r = requests.post(url, data=data)
+print(r.text)
+"""

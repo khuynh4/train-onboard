@@ -150,6 +150,7 @@ def signup():
     email = req.get('email')
     age = req.get('age')
     address = req.get('address')
+    about_me = req.get('about_me')
     password = req.get('password')
     confirm_pass = req.get('confirm_pass')
 
@@ -167,6 +168,9 @@ def signup():
     
     if not address:
         return jsonify({'headers': header, 'msg': 'Address is missing'}), 400
+
+    if not about_me:
+        about_me = "To be completed"
     
     if not password:
         return jsonify({'headers': header, 'msg': 'Password is missing'}), 400
@@ -195,11 +199,14 @@ def signup():
     auth.send_email_verification(user['idToken'])
 
     #put data into database
+    designation = 'unassigned'
     data = {
         'name': f'{first_name} {last_name}',
         'email': email,
         'age': age,
-        'address': address
+        'address': address,
+        'designation' : designation,
+        'about_me' : about_me
     }
 
     db.child('Users').push(data)
@@ -216,6 +223,7 @@ def signup():
         'uuid': user_uuid,
         'name': f'{first_name} {last_name}',
         'email': email,
+        'designation' : designation,
         'isLoggedIn': True
     }
 
